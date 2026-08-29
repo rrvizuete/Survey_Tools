@@ -1,0 +1,233 @@
+            <div id="stage-review" class="stage-panel {% if active_stage == 'review' %}active{% endif %}">
+                <div class="tabs">
+                    <button class="tab-button {% if active_tab == 'raw' %}active{% endif %}" onclick="showTab('raw')">Raw Field Observations</button>
+                    <button class="tab-button {% if active_tab == 'legs' %}active{% endif %}" onclick="showTab('legs')">Computed Legs</button>
+                    <button class="tab-button {% if active_tab == 'summary' %}active{% endif %}" onclick="showTab('summary')">Repeated Leg Analysis</button>
+                    <button class="tab-button {% if active_tab == 'decisions' %}active{% endif %}" onclick="showTab('decisions')">Observation Decisions</button>
+                </div>
+
+                <div id="tab-raw" class="tab-panel {% if active_tab == 'raw' %}active{% endif %}">
+                    <h2>Raw Field Observations</h2>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Run ID</th>
+                                    <th>Sequence</th>
+                                    <th>Point ID</th>
+                                    <th>Raw Elevation</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in raw_data %}
+                                <tr>
+                                    <td>{{ row.RunID }}</td>
+                                    <td>{{ row.Sequence }}</td>
+                                    <td>{{ row.PointID }}</td>
+                                    <td>{{ "%.4f"|format(row.Raw_Elevation) }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="tab-legs" class="tab-panel {% if active_tab == 'legs' %}active{% endif %}">
+                    <h2>Computed Legs</h2>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Run ID</th>
+                                    <th>From Sequence</th>
+                                    <th>To Sequence</th>
+                                    <th>From Point</th>
+                                    <th>To Point</th>
+                                    <th>Leg ID</th>
+                                    <th>Raw Delta Z</th>
+                                    <th>Normalized Delta Z</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in leg_data %}
+                                <tr>
+                                    <td>{{ row.RunID }}</td>
+                                    <td>{{ row.FromSeq }}</td>
+                                    <td>{{ row.ToSeq }}</td>
+                                    <td>{{ row.FromPoint }}</td>
+                                    <td>{{ row.ToPoint }}</td>
+                                    <td>{{ row.LegID }}</td>
+                                    <td>{{ "%.4f"|format(row.RawDiff) }}</td>
+                                    <td>{{ "%.4f"|format(row.NormalizedDiff) }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="tab-summary" class="tab-panel {% if active_tab == 'summary' %}active{% endif %}">
+                    <h2>Repeated Leg Analysis</h2>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Leg ID</th>
+                                    <th>Observation Count</th>
+                                    <th>Reference Value (Median)</th>
+                                    <th>Maximum Residual</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in summary_data %}
+                                <tr class="
+                                    {% if row.Status == 'Suspect Observation' %}
+                                        suspect-row
+                                    {% elif row.Status == 'Review Required' %}
+                                        review-row
+                                    {% endif %}
+                                ">
+                                    <td>{{ row.Leg_ID }}</td>
+                                    <td>{{ row.Observation_Count }}</td>
+                                    <td>{{ "%.4f"|format(row.Reference_Value) }}</td>
+                                    <td>{{ "%.4f"|format(row.Maximum_Residual) }}</td>
+                                    <td>{{ row.Status }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="tab-decisions" class="tab-panel {% if active_tab == 'decisions' %}active{% endif %}">
+                    <h2>Observation Decisions</h2>
+
+                    <form method="POST">
+                        <input type="hidden" name="action" value="apply_exclusions">
+                        <input type="hidden" name="active_stage" class="active-stage-input" value="{{ active_stage }}">
+                        <input type="hidden" name="active_tab" class="active-tab-input" value="decisions">
+                        <input type="hidden" name="active_adjustment_tab" class="active-adjustment-tab-input" value="{{ active_adjustment_tab }}">
+                        <input type="hidden" name="adjustment_mode" value="{{ adjustment_mode }}">
+                        <input type="hidden" name="saved_circuits_json" value='{{ saved_circuits_json|safe }}'>
+                        <input type="hidden" name="current_circuit_path_json" value='{{ current_circuit_path|tojson|safe }}'>
+                        <input type="hidden" name="tolerance" value="{{ tolerance }}">
+                        <input type="hidden" name="raw_json" value='{{ raw_data|tojson|safe }}'>
+                        <input type="hidden" name="control_json" value='{{ control_data|tojson|safe }}'>
+                        <input type="hidden" name="leg_json" value='{{ leg_data|tojson|safe }}'>
+                        <input type="hidden" name="summary_json" value='{{ summary_data|tojson|safe }}'>
+                        <input type="hidden" name="decision_json" value='{{ decision_data|tojson|safe }}'>
+                        <input type="hidden" name="cleaned_json" value='{{ cleaned_data|tojson|safe }}'>
+
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Exclude</th>
+                                        <th>Leg ID</th>
+                                        <th>Run ID</th>
+                                        <th>From Point</th>
+                                        <th>To Point</th>
+                                        <th>Normalized Delta Z</th>
+                                        <th>Reference Value (Median)</th>
+                                        <th>Residual From Reference</th>
+                                        <th>Decision</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in decision_data %}
+                                    {% set row_key = row.Leg_ID ~ '||' ~ row.Run_ID ~ '||' ~ row.From_Point ~ '||' ~ row.To_Point %}
+                                    <tr class="
+                                        {% if row.Decision == 'Suspect' %}
+                                            suspect-row
+                                        {% elif row.Decision == 'Pending Review' or row.Decision == 'Single Observation' %}
+                                            review-row
+                                        {% elif row.Decision == 'Excluded by User' %}
+                                            excluded-row
+                                        {% endif %}
+                                    ">
+                                        <td>
+                                            <input
+                                                type="checkbox"
+                                                name="exclude_row"
+                                                value="{{ row_key }}"
+                                                {% if row.User_Excluded %}checked{% endif %}
+                                            >
+                                        </td>
+                                        <td>{{ row.Leg_ID }}</td>
+                                        <td>{{ row.Run_ID }}</td>
+                                        <td>{{ row.From_Point }}</td>
+                                        <td>{{ row.To_Point }}</td>
+                                        <td>{{ "%.4f"|format(row.Normalized_Delta_Z) }}</td>
+                                        <td>
+                                            {% if row.Reference_Value == "" %}
+                                                —
+                                            {% else %}
+                                                {{ "%.4f"|format(row.Reference_Value) }}
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            {% if row.Residual_From_Reference == "" %}
+                                                —
+                                            {% else %}
+                                                {{ "%.4f"|format(row.Residual_From_Reference) }}
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ row.Decision }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="actions">
+                            <button type="submit">Apply Exclusions</button>
+                        </div>
+                    </form>
+
+                    <div class="download-actions">
+                        <form method="POST">
+                            <input type="hidden" name="action" value="download_exclusion_state">
+                            <input type="hidden" name="active_stage" value="review">
+                            <input type="hidden" name="active_tab" value="decisions">
+                            <input type="hidden" name="active_adjustment_tab" value="{{ active_adjustment_tab }}">
+                            <input type="hidden" name="adjustment_mode" value="{{ adjustment_mode }}">
+                            <input type="hidden" name="saved_circuits_json" value='{{ saved_circuits_json|safe }}'>
+                            <input type="hidden" name="current_circuit_path_json" value='{{ current_circuit_path|tojson|safe }}'>
+                            <input type="hidden" name="tolerance" value="{{ tolerance }}">
+                            <input type="hidden" name="raw_json" value='{{ raw_data|tojson|safe }}'>
+                            <input type="hidden" name="control_json" value='{{ control_data|tojson|safe }}'>
+                            <input type="hidden" name="leg_json" value='{{ leg_data|tojson|safe }}'>
+                            <input type="hidden" name="summary_json" value='{{ summary_data|tojson|safe }}'>
+                            <input type="hidden" name="decision_json" value='{{ decision_data|tojson|safe }}'>
+                            <input type="hidden" name="cleaned_json" value='{{ cleaned_data|tojson|safe }}'>
+                            {% for row in decision_data %}
+                            {% set row_key = row.Leg_ID ~ '||' ~ row.Run_ID ~ '||' ~ row.From_Point ~ '||' ~ row.To_Point %}
+                            {% if row.User_Excluded %}
+                            <input type="hidden" name="exclude_row" value="{{ row_key }}">
+                            {% endif %}
+                            {% endfor %}
+                            <button type="submit">Download Exclusion State</button>
+                        </form>
+
+                        <form method="POST" enctype="multipart/form-data">
+                            <input type="hidden" name="action" value="apply_uploaded_exclusions">
+                            <input type="hidden" name="active_stage" value="review">
+                            <input type="hidden" name="active_tab" value="decisions">
+                            <input type="hidden" name="active_adjustment_tab" value="{{ active_adjustment_tab }}">
+                            <input type="hidden" name="adjustment_mode" value="{{ adjustment_mode }}">
+                            <input type="hidden" name="saved_circuits_json" value='{{ saved_circuits_json|safe }}'>
+                            <input type="hidden" name="current_circuit_path_json" value='{{ current_circuit_path|tojson|safe }}'>
+                            <input type="hidden" name="tolerance" value="{{ tolerance }}">
+                            <input type="hidden" name="raw_json" value='{{ raw_data|tojson|safe }}'>
+                            <input type="hidden" name="control_json" value='{{ control_data|tojson|safe }}'>
+                            <input type="hidden" name="leg_json" value='{{ leg_data|tojson|safe }}'>
+                            <input type="hidden" name="summary_json" value='{{ summary_data|tojson|safe }}'>
+                            <input type="hidden" name="decision_json" value='{{ decision_data|tojson|safe }}'>
+                            <input type="hidden" name="cleaned_json" value='{{ cleaned_data|tojson|safe }}'>
+                            <input type="file" name="exclusion_state_file" accept=".json" required>
+                            <button type="submit">Upload Exclusion State</button>
+                        </form>
+                    </div>
+                </div>
+            </div>

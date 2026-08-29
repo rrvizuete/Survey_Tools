@@ -1,0 +1,54 @@
+            <div id="stage-cleaned" class="stage-panel {% if active_stage == 'cleaned' %}active{% endif %}">
+                <h2>Cleaned Leg Means</h2>
+                <p class="help-text">
+                    Final Normalized Delta Z is the arithmetic mean of the active observations for each leg.
+                    Review Required legs are still included in the adjustment unless you exclude observations manually.
+                </p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Leg ID</th>
+                                <th>From Point</th>
+                                <th>To Point</th>
+                                <th>Accepted Observation Count</th>
+                                <th>Final Normalized Delta Z</th>
+                                <th>Standard Deviation</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in cleaned_data %}
+                            <tr class="
+                                {% if row.Status == 'Review Required' or row.Status == 'Single Observation' %}
+                                    review-row
+                                {% elif row.Status == 'All Observations Excluded' %}
+                                    excluded-row
+                                {% endif %}
+                            ">
+                                <td>{{ row.Leg_ID }}</td>
+                                <td>{{ row.From_Point }}</td>
+                                <td>{{ row.To_Point }}</td>
+                                <td>{{ row.Accepted_Observation_Count }}</td>
+                                <td>
+                                    {% if row.Final_Normalized_Delta_Z == "" %}
+                                        —
+                                    {% else %}
+                                        {{ "%.4f"|format(row.Final_Normalized_Delta_Z) }}
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if row.Standard_Deviation == "" %}
+                                        —
+                                    {% else %}
+                                        {{ "%.4f"|format(row.Standard_Deviation) }}
+                                    {% endif %}
+                                </td>
+                                <td>{{ row.Status }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>

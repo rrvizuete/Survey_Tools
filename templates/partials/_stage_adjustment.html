@@ -1,0 +1,780 @@
+            <div id="stage-adjustment" class="stage-panel {% if active_stage == 'adjustment' %}active{% endif %}">
+                <h2>Adjustment</h2>
+
+                {% if adjustment_messages %}
+                <div class="inline-message">
+                    <strong>Adjustment messages:</strong>
+                    <ul>
+                        {% for msg in adjustment_messages %}
+                        <li>{{ msg }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                <div class="form-group" style="max-width: 320px; margin-bottom: 16px;">
+                    <label for="adjustment_mode_display">Adjustment Mode</label>
+                    <form method="POST">
+                        <input type="hidden" name="action" value="process">
+                        <input type="hidden" name="active_stage" value="adjustment">
+                        <input type="hidden" name="active_tab" value="{{ active_tab }}">
+                        <input type="hidden" name="active_adjustment_tab" value="{{ 'connectivity' if adjustment_mode == 'network' else 'builder' }}">
+                        <input type="hidden" name="tolerance" value="{{ tolerance }}">
+                        <input type="hidden" name="raw_json" value='{{ raw_data|tojson|safe }}'>
+                        <input type="hidden" name="control_json" value='{{ control_data|tojson|safe }}'>
+                        <input type="hidden" name="leg_json" value='{{ leg_data|tojson|safe }}'>
+                        <input type="hidden" name="summary_json" value='{{ summary_data|tojson|safe }}'>
+                        <input type="hidden" name="decision_json" value='{{ decision_data|tojson|safe }}'>
+                        <input type="hidden" name="cleaned_json" value='{{ cleaned_data|tojson|safe }}'>
+                        <input type="hidden" name="saved_circuits_json" value='{{ saved_circuits_json|safe }}'>
+                        <input type="hidden" name="current_circuit_path_json" value='{{ current_circuit_path|tojson|safe }}'>
+                        <select id="adjustment_mode_display" name="adjustment_mode" onchange="this.form.submit()">
+                            <option value="network" {% if adjustment_mode == 'network' %}selected{% endif %}>Network Least Squares</option>
+                            <option value="circuit" {% if adjustment_mode == 'circuit' %}selected{% endif %}>Circuit Closure / Proration</option>
+                        </select>
+                    </form>
+                </div>
+
+                {% if adjustment_mode == 'network' %}
+                <div class="tabs">
+                    <button class="tab-button {% if active_adjustment_tab == 'connectivity' %}active{% endif %}" onclick="showAdjustmentTab('connectivity')">Connectivity Report</button>
+                    <button class="tab-button {% if active_adjustment_tab == 'sections' %}active{% endif %}" onclick="showAdjustmentTab('sections')">Network Sections</button>
+                    <button class="tab-button {% if active_adjustment_tab == 'control' %}active{% endif %}" onclick="showAdjustmentTab('control')">Control Points</button>
+                    <button class="tab-button {% if active_adjustment_tab == 'elevations' %}active{% endif %}" onclick="showAdjustmentTab('elevations')">Adjusted Elevations</button>
+                    <button class="tab-button {% if active_adjustment_tab == 'residuals' %}active{% endif %}" onclick="showAdjustmentTab('residuals')">Observation Residuals</button>
+                    <button class="tab-button {% if active_adjustment_tab == 'checks' %}active{% endif %}" onclick="showAdjustmentTab('checks')">Control Point Checks</button>
+                </div>
+
+                <div id="adjustment-tab-connectivity" class="tab-panel {% if active_adjustment_tab == 'connectivity' %}active{% endif %}">
+                    <h3>Connectivity Report</h3>
+                    {% if connectivity_data %}
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Component ID</th>
+                                    <th>Point Count</th>
+                                    <th>Observation Count</th>
+                                    <th>Unknown Count</th>
+                                    <th>Degrees Of Freedom</th>
+                                    <th>Fixed Point Count</th>
+                                    <th>Fixed Points</th>
+                                    <th>Status</th>
+                                    <th>Redundancy Status</th>
+                                    <th>Points</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in connectivity_data %}
+                                <tr class="{% if row.Status == 'Not Adjustable' %}review-row{% endif %}">
+                                    <td>{{ row.Component_ID }}</td>
+                                    <td>{{ row.Point_Count }}</td>
+                                    <td>{{ row.Observation_Count }}</td>
+                                    <td>{{ row.Unknown_Count }}</td>
+                                    <td>{{ row.Degrees_Of_Freedom }}</td>
+                                    <td>{{ row.Fixed_Point_Count }}</td>
+                                    <td>{{ row.Fixed_Points }}</td>
+                                    <td>{{ row.Status }}</td>
+                                    <td>{{ row.Redundancy_Status }}</td>
+                                    <td>{{ row.Points }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <div id="adjustment-tab-sections" class="tab-panel {% if active_adjustment_tab == 'sections' %}active{% endif %}">
+                    <h3>Network Sections</h3>
+                    {% if sections_data %}
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Section ID</th>
+                                    <th>Component ID</th>
+                                    <th>Start Point</th>
+                                    <th>End Point</th>
+                                    <th>Start Type</th>
+                                    <th>End Type</th>
+                                    <th>Section Type</th>
+                                    <th>Leg Count</th>
+                                    <th>Point Count</th>
+                                    <th>Adjustable</th>
+                                    <th>Points In Order</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in sections_data %}
+                                <tr class="
+                                    {% if row.Section_Type == 'Fixed to Free' %}
+                                        review-row
+                                    {% elif row.Section_Type == 'Unanchored' %}
+                                        excluded-row
+                                    {% endif %}
+                                ">
+                                    <td>{{ row.Section_ID }}</td>
+                                    <td>{{ row.Component_ID }}</td>
+                                    <td>{{ row.Start_Point }}</td>
+                                    <td>{{ row.End_Point }}</td>
+                                    <td>{{ row.Start_Type }}</td>
+                                    <td>{{ row.End_Type }}</td>
+                                    <td>{{ row.Section_Type }}</td>
+                                    <td>{{ row.Leg_Count }}</td>
+                                    <td>{{ row.Point_Count }}</td>
+                                    <td>{{ row.Adjustable }}</td>
+                                    <td>{{ row.Points_In_Order }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <div id="adjustment-tab-control" class="tab-panel {% if active_adjustment_tab == 'control' %}active{% endif %}">
+                    <h3>Control Points</h3>
+                    {% if control_data %}
+                    <form method="POST">
+                        <input type="hidden" name="action" value="apply_fixed_points">
+                        <input type="hidden" name="active_stage" class="active-stage-input" value="adjustment">
+                        <input type="hidden" name="active_tab" class="active-tab-input" value="{{ active_tab }}">
+                        <input type="hidden" name="active_adjustment_tab" class="active-adjustment-tab-input" value="control">
+                        <input type="hidden" name="adjustment_mode" value="{{ adjustment_mode }}">
+                        <input type="hidden" name="saved_circuits_json" value='{{ saved_circuits_json|safe }}'>
+                        <input type="hidden" name="current_circuit_path_json" value='{{ current_circuit_path|tojson|safe }}'>
+                        <input type="hidden" name="tolerance" value="{{ tolerance }}">
+                        <input type="hidden" name="raw_json" value='{{ raw_data|tojson|safe }}'>
+                        <input type="hidden" name="control_json" value='{{ control_data|tojson|safe }}'>
+                        <input type="hidden" name="leg_json" value='{{ leg_data|tojson|safe }}'>
+                        <input type="hidden" name="summary_json" value='{{ summary_data|tojson|safe }}'>
+                        <input type="hidden" name="decision_json" value='{{ decision_data|tojson|safe }}'>
+                        <input type="hidden" name="cleaned_json" value='{{ cleaned_data|tojson|safe }}'>
+
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Point ID</th>
+                                        <th>Elevation</th>
+                                        <th>Fixed</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in control_data %}
+                                    <tr>
+                                        <td>
+                                            {{ row.PointID }}
+                                            <input type="hidden" name="control_point_id" value="{{ row.PointID }}">
+                                        </td>
+                                        <td>{{ "%.4f"|format(row.Elevation) }}</td>
+                                        <td>
+                                            <select name="control_fixed">
+                                                <option value="Y" {% if row.Fixed == 'Y' %}selected{% endif %}>Y</option>
+                                                <option value="N" {% if row.Fixed == 'N' %}selected{% endif %}>N</option>
+                                            </select>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="actions">
+                            <button type="submit">Apply Fixed Point Selection</button>
+                        </div>
+                    </form>
+                    {% endif %}
+                </div>
+
+                <div id="adjustment-tab-elevations" class="tab-panel {% if active_adjustment_tab == 'elevations' %}active{% endif %}">
+                    <h3>Adjusted Elevations</h3>
+                    {% if adjusted_points_data %}
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Point ID</th>
+                                    <th>Adjusted Elevation</th>
+                                    <th>Sigma</th>
+                                    <th>Fixed</th>
+                                    <th>Control Elevation</th>
+                                    <th>Difference To Control</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in adjusted_points_data %}
+                                <tr>
+                                    <td>{{ row.Point_ID }}</td>
+                                    <td>{% if row.Adjusted_Elevation == "" %}—{% else %}{{ "%.4f"|format(row.Adjusted_Elevation) }}{% endif %}</td>
+                                    <td>{% if row.Sigma == "" %}—{% else %}{{ "%.4f"|format(row.Sigma) }}{% endif %}</td>
+                                    <td>{{ row.Fixed }}</td>
+                                    <td>{% if row.Control_Elevation == "" %}—{% else %}{{ "%.4f"|format(row.Control_Elevation) }}{% endif %}</td>
+                                    <td>{% if row.Difference_To_Control == "" %}—{% else %}{{ "%.4f"|format(row.Difference_To_Control) }}{% endif %}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <div id="adjustment-tab-residuals" class="tab-panel {% if active_adjustment_tab == 'residuals' %}active{% endif %}">
+                    <h3>Observation Residuals</h3>
+                    <div class="form-group" style="max-width: 280px; margin-bottom: 14px;">
+                        <label for="residual-threshold-input">Residual Flag Threshold (ft)</label>
+                        <input id="residual-threshold-input" type="number" step="0.0001" min="0" value="{{ '%.4f'|format(residual_threshold) }}">
+                    </div>
+                    {% if observation_residuals_data %}
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>From Point</th>
+                                    <th>To Point</th>
+                                    <th>Leg ID</th>
+                                    <th>Final Normalized Delta Z</th>
+                                    <th>Adjusted Delta Z</th>
+                                    <th>Residual</th>
+                                    <th>Weight</th>
+                                    <th>Normalized Weight</th>
+                                    <th>Used In Adjustment</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in observation_residuals_data %}
+                                <tr class="{% if row.Used_In_Adjustment == 'N' %}excluded-row{% endif %}" data-residual="{{ row.Residual if row.Residual != '' else '' }}">
+                                    <td>{{ row.From_Point }}</td>
+                                    <td>{{ row.To_Point }}</td>
+                                    <td>{{ row.Leg_ID }}</td>
+                                    <td>{% if row.Final_Normalized_Delta_Z == "" %}—{% else %}{{ "%.4f"|format(row.Final_Normalized_Delta_Z) }}{% endif %}</td>
+                                    <td>{% if row.Adjusted_Delta_Z == "" %}—{% else %}{{ "%.4f"|format(row.Adjusted_Delta_Z) }}{% endif %}</td>
+                                    <td>{% if row.Residual == "" %}—{% else %}{{ "%.4f"|format(row.Residual) }}{% endif %}</td>
+                                    <td>{% if row.Weight == "" %}—{% else %}{{ "{:.6g}".format(row.Weight) }}{% endif %}</td>
+                                    <td>{% if row.Normalized_Weight == "" %}—{% else %}{{ "%.4f"|format(row.Normalized_Weight) }}{% endif %}</td>
+                                    <td>{{ row.Used_In_Adjustment }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <div id="adjustment-tab-checks" class="tab-panel {% if active_adjustment_tab == 'checks' %}active{% endif %}">
+                    <h3>Control Point Checks</h3>
+                    {% if control_checks_data %}
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Point ID</th>
+                                    <th>Control Elevation</th>
+                                    <th>Adjusted Elevation</th>
+                                    <th>Fixed</th>
+                                    <th>Difference</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in control_checks_data %}
+                                <tr>
+                                    <td>{{ row.Point_ID }}</td>
+                                    <td>{% if row.Control_Elevation == "" %}—{% else %}{{ "%.4f"|format(row.Control_Elevation) }}{% endif %}</td>
+                                    <td>{% if row.Adjusted_Elevation == "" %}—{% else %}{{ "%.4f"|format(row.Adjusted_Elevation) }}{% endif %}</td>
+                                    <td>{{ row.Fixed }}</td>
+                                    <td>{% if row.Difference == "" %}—{% else %}{{ "%.4f"|format(row.Difference) }}{% endif %}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+                </div>
+
+                {% else %}
+                <div class="tabs">
+                    <button class="tab-button {% if active_adjustment_tab == 'builder' %}active{% endif %}" onclick="showAdjustmentTab('builder')">Circuit Builder</button>
+                    <button class="tab-button {% if active_adjustment_tab == 'circuit_summary' %}active{% endif %}" onclick="showAdjustmentTab('circuit_summary')">Circuit Summary</button>
+                    <button class="tab-button {% if active_adjustment_tab == 'circuit_legs' %}active{% endif %}" onclick="showAdjustmentTab('circuit_legs')">Circuit Legs</button>
+                    <button class="tab-button {% if active_adjustment_tab == 'circuit_elevations' %}active{% endif %}" onclick="showAdjustmentTab('circuit_elevations')">Circuit Elevations</button>
+                    <button class="tab-button {% if active_adjustment_tab == 'control' %}active{% endif %}" onclick="showAdjustmentTab('control')">Control Points</button>
+                </div>
+
+                <div id="adjustment-tab-builder" class="tab-panel {% if active_adjustment_tab == 'builder' %}active{% endif %}">
+                    <h3>Circuit Builder</h3>
+
+                    {% if current_circuit_message %}
+                    <p><strong>{{ current_circuit_message }}</strong></p>
+                    {% endif %}
+
+                    <div class="circuit-builder-layout">
+                        <div>
+                            <h4>Start New Circuit</h4>
+                            <form method="POST">
+                                <input type="hidden" name="action" value="start_circuit">
+                                <input type="hidden" name="active_stage" value="adjustment">
+                                <input type="hidden" name="active_tab" value="{{ active_tab }}">
+                                <input type="hidden" name="active_adjustment_tab" value="builder">
+                                <input type="hidden" name="adjustment_mode" value="{{ adjustment_mode }}">
+                                <input type="hidden" name="saved_circuits_json" value='{{ saved_circuits_json|safe }}'>
+                                <input type="hidden" name="current_circuit_path_json" value='{{ current_circuit_path|tojson|safe }}'>
+                                <input type="hidden" name="tolerance" value="{{ tolerance }}">
+                                <input type="hidden" name="raw_json" value='{{ raw_data|tojson|safe }}'>
+                                <input type="hidden" name="control_json" value='{{ control_data|tojson|safe }}'>
+                                <input type="hidden" name="leg_json" value='{{ leg_data|tojson|safe }}'>
+                                <input type="hidden" name="summary_json" value='{{ summary_data|tojson|safe }}'>
+                                <input type="hidden" name="decision_json" value='{{ decision_data|tojson|safe }}'>
+                                <input type="hidden" name="cleaned_json" value='{{ cleaned_data|tojson|safe }}'>
+
+                                <div class="form-group">
+                                    <label for="start_point">Start Point</label>
+                                    <select id="start_point" name="start_point">
+                                        <option value="">Select a point</option>
+                                        {% for pt in available_start_points %}
+                                        <option value="{{ pt }}">{{ pt }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+
+                                <button type="submit">Start Circuit</button>
+                            </form>
+
+                            {% if current_circuit_candidates %}
+                            <h4 style="margin-top: 24px;">Available Next Points</h4>
+                            <form method="POST">
+                                <input type="hidden" name="action" value="choose_next_point">
+                                <input type="hidden" name="active_stage" value="adjustment">
+                                <input type="hidden" name="active_tab" value="{{ active_tab }}">
+                                <input type="hidden" name="active_adjustment_tab" value="builder">
+                                <input type="hidden" name="adjustment_mode" value="{{ adjustment_mode }}">
+                                <input type="hidden" name="saved_circuits_json" value='{{ saved_circuits_json|safe }}'>
+                                <input type="hidden" name="current_circuit_path_json" value='{{ current_circuit_path|tojson|safe }}'>
+                                <input type="hidden" name="tolerance" value="{{ tolerance }}">
+                                <input type="hidden" name="raw_json" value='{{ raw_data|tojson|safe }}'>
+                                <input type="hidden" name="control_json" value='{{ control_data|tojson|safe }}'>
+                                <input type="hidden" name="leg_json" value='{{ leg_data|tojson|safe }}'>
+                                <input type="hidden" name="summary_json" value='{{ summary_data|tojson|safe }}'>
+                                <input type="hidden" name="decision_json" value='{{ decision_data|tojson|safe }}'>
+                                <input type="hidden" name="cleaned_json" value='{{ cleaned_data|tojson|safe }}'>
+
+                                <div class="form-group">
+                                    <label for="next_point">Choose Next Point</label>
+                                    <select id="next_point" name="next_point">
+                                        {% for pt in current_circuit_candidates %}
+                                        <option value="{{ pt }}">{{ pt }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+
+                                <button type="submit">Add Next Point</button>
+                            </form>
+                            {% endif %}
+                        </div>
+
+                        <div>
+                            <h4>Current Circuit</h4>
+                            <div class="table-wrap">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Order</th>
+                                            <th>Point ID</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for pt in current_circuit_path %}
+                                        <tr>
+                                            <td>{{ loop.index }}</td>
+                                            <td>{{ pt }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <p><strong>Current Type:</strong> {{ current_circuit_type if current_circuit_type else '—' }}</p>
+
+                            <div class="download-actions">
+                                <form method="POST">
+                                    <input type="hidden" name="action" value="undo_circuit_point">
+                                    <input type="hidden" name="active_stage" value="adjustment">
+                                    <input type="hidden" name="active_tab" value="{{ active_tab }}">
+                                    <input type="hidden" name="active_adjustment_tab" value="builder">
+                                    <input type="hidden" name="adjustment_mode" value="{{ adjustment_mode }}">
+                                    <input type="hidden" name="saved_circuits_json" value='{{ saved_circuits_json|safe }}'>
+                                    <input type="hidden" name="current_circuit_path_json" value='{{ current_circuit_path|tojson|safe }}'>
+                                    <input type="hidden" name="tolerance" value="{{ tolerance }}">
+                                    <input type="hidden" name="raw_json" value='{{ raw_data|tojson|safe }}'>
+                                    <input type="hidden" name="control_json" value='{{ control_data|tojson|safe }}'>
+                                    <input type="hidden" name="leg_json" value='{{ leg_data|tojson|safe }}'>
+                                    <input type="hidden" name="summary_json" value='{{ summary_data|tojson|safe }}'>
+                                    <input type="hidden" name="decision_json" value='{{ decision_data|tojson|safe }}'>
+                                    <input type="hidden" name="cleaned_json" value='{{ cleaned_data|tojson|safe }}'>
+                                    <button type="submit">Undo</button>
+                                </form>
+
+                                <form method="POST">
+                                    <input type="hidden" name="action" value="clear_circuit">
+                                    <input type="hidden" name="active_stage" value="adjustment">
+                                    <input type="hidden" name="active_tab" value="{{ active_tab }}">
+                                    <input type="hidden" name="active_adjustment_tab" value="builder">
+                                    <input type="hidden" name="adjustment_mode" value="{{ adjustment_mode }}">
+                                    <input type="hidden" name="saved_circuits_json" value='{{ saved_circuits_json|safe }}'>
+                                    <input type="hidden" name="current_circuit_path_json" value='{{ current_circuit_path|tojson|safe }}'>
+                                    <input type="hidden" name="tolerance" value="{{ tolerance }}">
+                                    <input type="hidden" name="raw_json" value='{{ raw_data|tojson|safe }}'>
+                                    <input type="hidden" name="control_json" value='{{ control_data|tojson|safe }}'>
+                                    <input type="hidden" name="leg_json" value='{{ leg_data|tojson|safe }}'>
+                                    <input type="hidden" name="summary_json" value='{{ summary_data|tojson|safe }}'>
+                                    <input type="hidden" name="decision_json" value='{{ decision_data|tojson|safe }}'>
+                                    <input type="hidden" name="cleaned_json" value='{{ cleaned_data|tojson|safe }}'>
+                                    <button type="submit">Clear</button>
+                                </form>
+
+                                <form method="POST">
+                                    <input type="hidden" name="action" value="save_circuit">
+                                    <input type="hidden" name="active_stage" value="adjustment">
+                                    <input type="hidden" name="active_tab" value="{{ active_tab }}">
+                                    <input type="hidden" name="active_adjustment_tab" value="builder">
+                                    <input type="hidden" name="adjustment_mode" value="{{ adjustment_mode }}">
+                                    <input type="hidden" name="saved_circuits_json" value='{{ saved_circuits_json|safe }}'>
+                                    <input type="hidden" name="current_circuit_path_json" value='{{ current_circuit_path|tojson|safe }}'>
+                                    <input type="hidden" name="tolerance" value="{{ tolerance }}">
+                                    <input type="hidden" name="raw_json" value='{{ raw_data|tojson|safe }}'>
+                                    <input type="hidden" name="control_json" value='{{ control_data|tojson|safe }}'>
+                                    <input type="hidden" name="leg_json" value='{{ leg_data|tojson|safe }}'>
+                                    <input type="hidden" name="summary_json" value='{{ summary_data|tojson|safe }}'>
+                                    <input type="hidden" name="decision_json" value='{{ decision_data|tojson|safe }}'>
+                                    <input type="hidden" name="cleaned_json" value='{{ cleaned_data|tojson|safe }}'>
+                                    <button type="submit">Save Circuit</button>
+                                </form>
+                            </div>
+
+                            <div class="download-actions" style="margin-top: 16px;">
+                                <form method="POST">
+                                    <input type="hidden" name="action" value="download_circuits_state">
+                                    <input type="hidden" name="active_stage" value="adjustment">
+                                    <input type="hidden" name="active_tab" value="{{ active_tab }}">
+                                    <input type="hidden" name="active_adjustment_tab" value="builder">
+                                    <input type="hidden" name="adjustment_mode" value="{{ adjustment_mode }}">
+                                    <input type="hidden" name="saved_circuits_json" value='{{ saved_circuits_json|safe }}'>
+                                    <input type="hidden" name="current_circuit_path_json" value='{{ current_circuit_path|tojson|safe }}'>
+                                    <input type="hidden" name="tolerance" value="{{ tolerance }}">
+                                    <input type="hidden" name="raw_json" value='{{ raw_data|tojson|safe }}'>
+                                    <input type="hidden" name="control_json" value='{{ control_data|tojson|safe }}'>
+                                    <input type="hidden" name="leg_json" value='{{ leg_data|tojson|safe }}'>
+                                    <input type="hidden" name="summary_json" value='{{ summary_data|tojson|safe }}'>
+                                    <input type="hidden" name="decision_json" value='{{ decision_data|tojson|safe }}'>
+                                    <input type="hidden" name="cleaned_json" value='{{ cleaned_data|tojson|safe }}'>
+                                    <button type="submit">Export Circuits JSON</button>
+                                </form>
+
+                                <form method="POST" enctype="multipart/form-data">
+                                    <input type="hidden" name="action" value="apply_uploaded_circuits">
+                                    <input type="hidden" name="active_stage" value="adjustment">
+                                    <input type="hidden" name="active_tab" value="{{ active_tab }}">
+                                    <input type="hidden" name="active_adjustment_tab" value="builder">
+                                    <input type="hidden" name="adjustment_mode" value="{{ adjustment_mode }}">
+                                    <input type="hidden" name="saved_circuits_json" value='{{ saved_circuits_json|safe }}'>
+                                    <input type="hidden" name="current_circuit_path_json" value='{{ current_circuit_path|tojson|safe }}'>
+                                    <input type="hidden" name="tolerance" value="{{ tolerance }}">
+                                    <input type="hidden" name="raw_json" value='{{ raw_data|tojson|safe }}'>
+                                    <input type="hidden" name="control_json" value='{{ control_data|tojson|safe }}'>
+                                    <input type="hidden" name="leg_json" value='{{ leg_data|tojson|safe }}'>
+                                    <input type="hidden" name="summary_json" value='{{ summary_data|tojson|safe }}'>
+                                    <input type="hidden" name="decision_json" value='{{ decision_data|tojson|safe }}'>
+                                    <input type="hidden" name="cleaned_json" value='{{ cleaned_data|tojson|safe }}'>
+                                    <input type="file" name="circuits_state_file" accept=".json" required>
+                                    <button type="submit">Import Circuits JSON</button>
+                                </form>
+                            </div>
+                        </div>
+
+                        <div>
+                            <h4>Points Not Included in Circuits</h4>
+                            <p class="help-text">Updates while building and only shows points not in the current path or any saved circuit.</p>
+
+                            <h5>Available Points</h5>
+                            <div class="table-wrap">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Point ID</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for point in unassigned_points.not_in_any %}
+                                        <tr><td>{{ point }}</td></tr>
+                                        {% else %}
+                                        <tr><td>No points are fully unused.</td></tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="adjustment-tab-circuit_summary" class="tab-panel {% if active_adjustment_tab == 'circuit_summary' %}active{% endif %}">
+                    <h3>Circuit Summary</h3>
+                    {% if circuit_summary_data %}
+                    <form method="POST">
+                        <input type="hidden" name="action" value="delete_selected_circuits">
+                        <input type="hidden" name="active_stage" value="adjustment">
+                        <input type="hidden" name="active_tab" value="{{ active_tab }}">
+                        <input type="hidden" name="active_adjustment_tab" value="circuit_summary">
+                        <input type="hidden" name="adjustment_mode" value="{{ adjustment_mode }}">
+                        <input type="hidden" name="saved_circuits_json" value='{{ saved_circuits_json|safe }}'>
+                        <input type="hidden" name="current_circuit_path_json" value='{{ current_circuit_path|tojson|safe }}'>
+                        <input type="hidden" name="tolerance" value="{{ tolerance }}">
+                        <input type="hidden" name="residual_threshold" value="{{ residual_threshold }}">
+                        <input type="hidden" name="raw_json" value='{{ raw_data|tojson|safe }}'>
+                        <input type="hidden" name="control_json" value='{{ control_data|tojson|safe }}'>
+                        <input type="hidden" name="leg_json" value='{{ leg_data|tojson|safe }}'>
+                        <input type="hidden" name="summary_json" value='{{ summary_data|tojson|safe }}'>
+                        <input type="hidden" name="decision_json" value='{{ decision_data|tojson|safe }}'>
+                        <input type="hidden" name="cleaned_json" value='{{ cleaned_data|tojson|safe }}'>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Delete</th>
+                                    <th>Circuit ID</th>
+                                    <th>Circuit Type</th>
+                                    <th>Point Count</th>
+                                    <th>Leg Count</th>
+                                    <th>Start Point</th>
+                                    <th>End Point</th>
+                                    <th>Observed Total Delta Z</th>
+                                    <th>Control Delta Z</th>
+                                    <th>Closure Error</th>
+                                    <th>Correction Per Leg</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in circuit_summary_data %}
+                                <tr class="
+                                    {% if row.Circuit_Type == 'Fixed to Free' %}
+                                        review-row
+                                    {% elif row.Circuit_Type == 'Unanchored' %}
+                                        excluded-row
+                                    {% endif %}
+                                ">
+                                    <td><input type="checkbox" name="delete_circuit_id" value="{{ row.Circuit_ID }}"></td>
+                                    <td>{{ row.Circuit_ID }}</td>
+                                    <td>{{ row.Circuit_Type }}</td>
+                                    <td>{{ row.Point_Count }}</td>
+                                    <td>{{ row.Leg_Count }}</td>
+                                    <td>{{ row.Start_Point }}</td>
+                                    <td>{{ row.End_Point }}</td>
+                                    <td>{% if row.Observed_Total_Delta_Z == "" %}—{% else %}{{ "%.4f"|format(row.Observed_Total_Delta_Z) }}{% endif %}</td>
+                                    <td>{% if row.Control_Delta_Z == "" %}—{% else %}{{ "%.4f"|format(row.Control_Delta_Z) }}{% endif %}</td>
+                                    <td>{% if row.Closure_Error == "" %}—{% else %}{{ "%.4f"|format(row.Closure_Error) }}{% endif %}</td>
+                                    <td>{% if row.Correction_Per_Leg == "" %}—{% else %}{{ "%.4f"|format(row.Correction_Per_Leg) }}{% endif %}</td>
+                                    <td>{{ row.Status }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="actions">
+                        <button type="submit">Delete Selected Circuits</button>
+                    </div>
+                    </form>
+
+                    {% if unanchored_circuit_options %}
+                    <div class="inline-message" style="margin-top: 16px;">
+                        <strong>Anchor free-to-free circuits:</strong>
+                        <p>Select a point in each free-to-free circuit and enter a known elevation to calculate elevations for the rest of that circuit.</p>
+                    </div>
+                    <div class="table-wrap anchor-circuit-table-wrap">
+                        <div style="display: none;">
+                            {% for option in unanchored_circuit_options %}
+                            {% set form_id = "anchor-form-" ~ loop.index %}
+                            <form id="{{ form_id }}" method="POST">
+                                <input type="hidden" name="action" value="apply_circuit_anchor">
+                                <input type="hidden" name="active_stage" value="adjustment">
+                                <input type="hidden" name="active_tab" value="{{ active_tab }}">
+                                <input type="hidden" name="active_adjustment_tab" value="circuit_summary">
+                                <input type="hidden" name="adjustment_mode" value="{{ adjustment_mode }}">
+                                <input type="hidden" name="saved_circuits_json" value='{{ saved_circuits_json|safe }}'>
+                                <input type="hidden" name="current_circuit_path_json" value='{{ current_circuit_path|tojson|safe }}'>
+                                <input type="hidden" name="tolerance" value="{{ tolerance }}">
+                                <input type="hidden" name="residual_threshold" value="{{ residual_threshold }}">
+                                <input type="hidden" name="raw_json" value='{{ raw_data|tojson|safe }}'>
+                                <input type="hidden" name="control_json" value='{{ control_data|tojson|safe }}'>
+                                <input type="hidden" name="leg_json" value='{{ leg_data|tojson|safe }}'>
+                                <input type="hidden" name="summary_json" value='{{ summary_data|tojson|safe }}'>
+                                <input type="hidden" name="decision_json" value='{{ decision_data|tojson|safe }}'>
+                                <input type="hidden" name="cleaned_json" value='{{ cleaned_data|tojson|safe }}'>
+                                <input type="hidden" name="anchor_circuit_id" value="{{ option.circuit_id }}">
+                            </form>
+                            {% endfor %}
+                        </div>
+                        <table class="anchor-circuit-table">
+                            <thead>
+                                <tr>
+                                    <th>Circuit</th>
+                                    <th>Anchor Point</th>
+                                    <th>Known Elevation</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for option in unanchored_circuit_options %}
+                                {% set form_id = "anchor-form-" ~ loop.index %}
+                                <tr>
+                                    <td><strong>{{ option.circuit_id }}</strong></td>
+                                    <td>
+                                        <select name="anchor_point_id" form="{{ form_id }}" required>
+                                            {% for point in option.points %}
+                                            <option value="{{ point }}">{{ point }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <input
+                                            type="number"
+                                            name="anchor_elevation"
+                                            form="{{ form_id }}"
+                                            step="0.0001"
+                                            placeholder="Elevation"
+                                            required
+                                        >
+                                    </td>
+                                    <td>
+                                        <button type="submit" form="{{ form_id }}">Apply Anchor</button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+                    {% else %}
+                    <p>No saved circuits yet.</p>
+                    {% endif %}
+                </div>
+
+                <div id="adjustment-tab-circuit_legs" class="tab-panel {% if active_adjustment_tab == 'circuit_legs' %}active{% endif %}">
+                    <h3>Circuit Legs</h3>
+                    {% if circuit_legs_data %}
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Circuit ID</th>
+                                    <th>From Point</th>
+                                    <th>To Point</th>
+                                    <th>Leg ID</th>
+                                    <th>Observed Delta Z</th>
+                                    <th>Correction</th>
+                                    <th>Corrected Delta Z</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in circuit_legs_data %}
+                                <tr>
+                                    <td>{{ row.Circuit_ID }}</td>
+                                    <td>{{ row.From_Point }}</td>
+                                    <td>{{ row.To_Point }}</td>
+                                    <td>{{ row.Leg_ID }}</td>
+                                    <td>{{ "%.4f"|format(row.Observed_Delta_Z) }}</td>
+                                    <td>{% if row.Correction == "" %}—{% else %}{{ "%.4f"|format(row.Correction) }}{% endif %}</td>
+                                    <td>{{ "%.4f"|format(row.Corrected_Delta_Z) }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p>No circuit leg results yet.</p>
+                    {% endif %}
+                </div>
+
+                <div id="adjustment-tab-circuit_elevations" class="tab-panel {% if active_adjustment_tab == 'circuit_elevations' %}active{% endif %}">
+                    <h3>Circuit Elevations</h3>
+                    {% if circuit_elevations_data %}
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Circuit ID</th>
+                                    <th>Point ID</th>
+                                    <th>Elevation</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in circuit_elevations_data %}
+                                <tr>
+                                    <td>{{ row.Circuit_ID }}</td>
+                                    <td>{{ row.Point_ID }}</td>
+                                    <td>{{ "%.4f"|format(row.Elevation) }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p>No circuit elevation results yet.</p>
+                    {% endif %}
+                </div>
+
+                <div id="adjustment-tab-control" class="tab-panel {% if active_adjustment_tab == 'control' %}active{% endif %}">
+                    <h3>Control Points</h3>
+                    {% if control_data %}
+                    <form method="POST">
+                        <input type="hidden" name="action" value="apply_fixed_points">
+                        <input type="hidden" name="active_stage" value="adjustment">
+                        <input type="hidden" name="active_tab" value="{{ active_tab }}">
+                        <input type="hidden" name="active_adjustment_tab" value="control">
+                        <input type="hidden" name="adjustment_mode" value="{{ adjustment_mode }}">
+                        <input type="hidden" name="saved_circuits_json" value='{{ saved_circuits_json|safe }}'>
+                        <input type="hidden" name="current_circuit_path_json" value='{{ current_circuit_path|tojson|safe }}'>
+                        <input type="hidden" name="tolerance" value="{{ tolerance }}">
+                        <input type="hidden" name="raw_json" value='{{ raw_data|tojson|safe }}'>
+                        <input type="hidden" name="control_json" value='{{ control_data|tojson|safe }}'>
+                        <input type="hidden" name="leg_json" value='{{ leg_data|tojson|safe }}'>
+                        <input type="hidden" name="summary_json" value='{{ summary_data|tojson|safe }}'>
+                        <input type="hidden" name="decision_json" value='{{ decision_data|tojson|safe }}'>
+                        <input type="hidden" name="cleaned_json" value='{{ cleaned_data|tojson|safe }}'>
+
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Point ID</th>
+                                        <th>Elevation</th>
+                                        <th>Fixed</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in control_data %}
+                                    <tr>
+                                        <td>
+                                            {{ row.PointID }}
+                                            <input type="hidden" name="control_point_id" value="{{ row.PointID }}">
+                                        </td>
+                                        <td>{{ "%.4f"|format(row.Elevation) }}</td>
+                                        <td>
+                                            <select name="control_fixed">
+                                                <option value="Y" {% if row.Fixed == 'Y' %}selected{% endif %}>Y</option>
+                                                <option value="N" {% if row.Fixed == 'N' %}selected{% endif %}>N</option>
+                                            </select>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="actions">
+                            <button type="submit">Apply Fixed Point Selection</button>
+                        </div>
+                    </form>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
