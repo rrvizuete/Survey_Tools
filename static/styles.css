@@ -175,6 +175,18 @@ tbody tr:hover td { background: var(--blue-soft); }
 .anchor-circuit-table select, .anchor-circuit-table input[type="number"] { width: 100%; min-width: 160px; margin: 0; }
 .anchor-circuit-table button { width: 100%; min-width: 140px; }
 
+.circuit-diagram { margin-bottom: 16px; background: #fafbfc; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.circuit-diagram:empty { display: none; }
+.circuit-diagram-svg { display: block; width: 100%; height: auto; max-height: 420px; }
+.diagram-edge { stroke: var(--line-dark); stroke-width: 1.5; }
+.diagram-path-edge { stroke: var(--blue); stroke-width: 3; }
+.diagram-node { fill: #fff; stroke: var(--muted); stroke-width: 2; }
+.diagram-node-path { stroke: var(--blue); fill: var(--blue-soft); }
+.diagram-node-fixed { fill: #fff; stroke: var(--navy-2); stroke-width: 2.5; }
+.diagram-node-candidate { stroke: var(--success); cursor: pointer; }
+.diagram-node-candidate:hover { fill: #e6f4ec; }
+.diagram-label { font-size: 11px; font-weight: 700; fill: var(--ink); text-anchor: middle; pointer-events: none; }
+
 .circuit-builder-layout { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)) minmax(0,1.1fr); gap: 16px; }
 .circuit-builder-layout > * { min-width: 0; padding: 18px; background: #fafbfc; border: 1px solid var(--line); border-radius: 10px; }
 

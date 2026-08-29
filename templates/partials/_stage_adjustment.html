@@ -311,6 +311,15 @@
                     <p><strong>{{ current_circuit_message }}</strong></p>
                     {% endif %}
 
+                    <div
+                        id="circuit-diagram-root"
+                        class="circuit-diagram"
+                        data-edges='{{ circuit_graph_edges|tojson|safe }}'
+                        data-path='{{ current_circuit_path|tojson|safe }}'
+                        data-candidates='{{ current_circuit_candidates|tojson|safe }}'
+                        data-fixed='{{ fixed_points_list|tojson|safe }}'
+                    ></div>
+
                     <div class="circuit-builder-layout">
                         <div>
                             <h4>Start New Circuit</h4>
