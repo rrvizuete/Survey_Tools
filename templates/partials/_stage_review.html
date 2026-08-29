@@ -226,8 +226,8 @@
                             <input type="hidden" name="summary_json" value='{{ summary_data|tojson|safe }}'>
                             <input type="hidden" name="decision_json" value='{{ decision_data|tojson|safe }}'>
                             <input type="hidden" name="cleaned_json" value='{{ cleaned_data|tojson|safe }}'>
-                            <input type="file" name="exclusion_state_file" accept=".json" required>
-                            <button type="submit">Upload Exclusion State</button>
+                            <label for="exclusion_state_file" class="file-trigger">Upload Exclusion State</label>
+                            <input type="file" id="exclusion_state_file" name="exclusion_state_file" accept=".json" class="u-hidden" onchange="this.form.submit()">
                         </form>
                     </div>
 
