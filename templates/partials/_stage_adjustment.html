@@ -18,7 +18,7 @@
                 <div class="form-group u-max-w-md u-mb-16">
                     <label for="adjustment_mode_display">Adjustment Mode</label>
                     <form method="POST">
-                        <input type="hidden" name="action" value="process">
+                        <input type="hidden" name="action" value="switch_adjustment_mode">
                         <input type="hidden" name="active_stage" value="adjustment">
                         <input type="hidden" name="active_tab" value="{{ active_tab }}">
                         <input type="hidden" name="active_adjustment_tab" value="{{ 'connectivity' if adjustment_mode == 'network' else 'builder' }}">

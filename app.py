@@ -252,6 +252,24 @@ def build_unassigned_points(
     }
 
 
+def build_stage_progress(decision_data, cleaned_data, network_summary, circuit_summary_stats, adjustment_mode):
+    review_status = None
+    if decision_data:
+        unresolved = {"Suspect", "Pending Review", "Single Observation"}
+        review_status = "warn" if any(row.get("Decision") in unresolved for row in decision_data) else "pass"
+
+    cleaned_status = None
+    if cleaned_data:
+        cleaned_status = "pass" if all(row.get("Status") == "Ready" for row in cleaned_data) else "warn"
+
+    adjustment_summary = network_summary if adjustment_mode == "network" else circuit_summary_stats
+    adjustment_status = None
+    if adjustment_summary:
+        adjustment_status = "pass" if adjustment_summary["overall_status"] == "Pass" else "warn"
+
+    return {"review": review_status, "cleaned": cleaned_status, "adjustment": adjustment_status}
+
+
 def build_template_workbook(sheet_name: str, columns: list[str], filename: str):
     output = BytesIO()
     df = pd.DataFrame(columns=columns)
@@ -644,6 +662,70 @@ def index():
                         current_circuit_type = classify_circuit_path(current_circuit_path, fixed_points) if len(current_circuit_path) >= 2 else ""
 
                     success_message = "Fixed points updated successfully."
+
+                active_stage = "adjustment"
+
+            elif action == "switch_adjustment_mode":
+                raw_df = parse_json_df(raw_json)
+                control_df = parse_json_df(control_json)
+                leg_df = parse_json_df(leg_json)
+                summary_df = parse_json_df(summary_json)
+                decision_df = parse_json_df(decision_json)
+                cleaned_df = parse_json_df(cleaned_json)
+
+                raw_data = raw_df.to_dict(orient="records")
+                control_data = control_df.to_dict(orient="records")
+                leg_data = leg_df.to_dict(orient="records")
+                summary_data = summary_df.to_dict(orient="records")
+                decision_data = decision_df.to_dict(orient="records")
+                cleaned_data = cleaned_df.to_dict(orient="records")
+
+                if control_df.empty:
+                    adjustment_messages.append(
+                        "Control_Points sheet was not found. Adjustment stage is unavailable."
+                    )
+                elif cleaned_df.empty:
+                    adjustment_messages.append("No cleaned leg data available yet.")
+                elif adjustment_mode == "network":
+                    (
+                        adjusted_points_df,
+                        observation_residuals_df,
+                        control_checks_df,
+                        connectivity_df,
+                        sections_df,
+                        adj_errors,
+                        adj_warnings,
+                    ) = run_network_pipeline(cleaned_df, control_df)
+
+                    adjustment_messages.extend(adj_errors)
+                    adjustment_messages.extend(adj_warnings)
+
+                    adjusted_points_data = adjusted_points_df.to_dict(orient="records")
+                    observation_residuals_data = observation_residuals_df.to_dict(orient="records")
+                    control_checks_data = control_checks_df.to_dict(orient="records")
+                    connectivity_data = connectivity_df.to_dict(orient="records")
+                    sections_data = sections_df.to_dict(orient="records")
+                    active_adjustment_tab = "connectivity"
+                else:
+                    (
+                        circuit_summary_df,
+                        circuit_legs_df,
+                        circuit_elevations_df,
+                        circuit_errors,
+                        circuit_warnings,
+                    ) = run_circuit_pipeline(saved_circuits, cleaned_df, control_df)
+
+                    adjustment_messages.extend(circuit_errors)
+                    adjustment_messages.extend(circuit_warnings)
+
+                    circuit_summary_data = circuit_summary_df.to_dict(orient="records")
+                    circuit_legs_data = circuit_legs_df.to_dict(orient="records")
+                    circuit_elevations_data = circuit_elevations_df.to_dict(orient="records")
+
+                    graph, _usable_cleaned = build_graph_from_cleaned_legs(cleaned_df)
+                    available_start_points = get_all_available_points(graph)
+                    current_circuit_candidates = get_next_candidate_points(graph, current_circuit_path)
+                    active_adjustment_tab = "builder"
 
                 active_stage = "adjustment"
 
@@ -1318,6 +1400,9 @@ def index():
 
     network_summary = build_network_adjustment_summary(connectivity_data, observation_residuals_data)
     circuit_summary_stats = build_circuit_adjustment_summary(circuit_summary_data)
+    stage_progress = build_stage_progress(
+        decision_data, cleaned_data, network_summary, circuit_summary_stats, adjustment_mode
+    )
 
     return render_template(
         "index.html",
@@ -1337,6 +1422,7 @@ def index():
         circuit_legs_data=circuit_legs_data,
         circuit_elevations_data=circuit_elevations_data,
         circuit_summary_stats=circuit_summary_stats,
+        stage_progress=stage_progress,
         current_circuit_path=current_circuit_path,
         current_circuit_candidates=current_circuit_candidates,
         available_start_points=available_start_points,
