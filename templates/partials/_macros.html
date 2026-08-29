@@ -1,0 +1,23 @@
+{% macro status_badge(text) -%}
+{%- set variant = {
+    'Within Tolerance': 'pass',
+    'Ready': 'pass',
+    'Accepted': 'pass',
+    'Adjustable': 'pass',
+    'Redundant': 'pass',
+    'Fixed to Fixed': 'pass',
+    'Review Required': 'warn',
+    'Pending Review': 'warn',
+    'Single Observation': 'warn',
+    'Exact Solution': 'warn',
+    'Fixed to Free': 'warn',
+    'Suspect Observation': 'fail',
+    'Suspect': 'fail',
+    'Not Adjustable': 'fail',
+    'Unanchored': 'fail',
+    'All Observations Excluded': 'fail',
+    'Invalid': 'fail',
+    'Excluded by User': 'neutral'
+}.get(text, 'neutral') -%}
+<span class="badge badge-{{ variant }}">{{ text }}</span>
+{%- endmacro %}

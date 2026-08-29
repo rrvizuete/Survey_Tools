@@ -1,3 +1,4 @@
+            {% from "partials/_macros.html" import status_badge %}
             <div id="stage-review" class="stage-panel {% if active_stage == 'review' %}active{% endif %}">
                 <div class="tabs">
                     <button class="tab-button {% if active_tab == 'raw' %}active{% endif %}" onclick="showTab('raw')">Raw Field Observations</button>
@@ -92,7 +93,7 @@
                                     <td>{{ row.Observation_Count }}</td>
                                     <td>{{ "%.4f"|format(row.Reference_Value) }}</td>
                                     <td>{{ "%.4f"|format(row.Maximum_Residual) }}</td>
-                                    <td>{{ row.Status }}</td>
+                                    <td>{{ status_badge(row.Status) }}</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -173,7 +174,7 @@
                                                 {{ "%.4f"|format(row.Residual_From_Reference) }}
                                             {% endif %}
                                         </td>
-                                        <td>{{ row.Decision }}</td>
+                                        <td>{{ status_badge(row.Decision) }}</td>
                                     </tr>
                                     {% endfor %}
                                 </tbody>

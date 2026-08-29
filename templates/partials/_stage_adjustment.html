@@ -1,3 +1,4 @@
+            {% from "partials/_macros.html" import status_badge %}
             <div id="stage-adjustment" class="stage-panel {% if active_stage == 'adjustment' %}active{% endif %}">
                 <h2>Adjustment</h2>
 
@@ -14,7 +15,7 @@
                 </div>
                 {% endif %}
 
-                <div class="form-group" style="max-width: 320px; margin-bottom: 16px;">
+                <div class="form-group u-max-w-md u-mb-16">
                     <label for="adjustment_mode_display">Adjustment Mode</label>
                     <form method="POST">
                         <input type="hidden" name="action" value="process">
@@ -76,8 +77,8 @@
                                     <td>{{ row.Degrees_Of_Freedom }}</td>
                                     <td>{{ row.Fixed_Point_Count }}</td>
                                     <td>{{ row.Fixed_Points }}</td>
-                                    <td>{{ row.Status }}</td>
-                                    <td>{{ row.Redundancy_Status }}</td>
+                                    <td>{{ status_badge(row.Status) }}</td>
+                                    <td>{{ status_badge(row.Redundancy_Status) }}</td>
                                     <td>{{ row.Points }}</td>
                                 </tr>
                                 {% endfor %}
@@ -122,7 +123,7 @@
                                     <td>{{ row.End_Point }}</td>
                                     <td>{{ row.Start_Type }}</td>
                                     <td>{{ row.End_Type }}</td>
-                                    <td>{{ row.Section_Type }}</td>
+                                    <td>{{ status_badge(row.Section_Type) }}</td>
                                     <td>{{ row.Leg_Count }}</td>
                                     <td>{{ row.Point_Count }}</td>
                                     <td>{{ row.Adjustable }}</td>
@@ -224,7 +225,7 @@
 
                 <div id="adjustment-tab-residuals" class="tab-panel {% if active_adjustment_tab == 'residuals' %}active{% endif %}">
                     <h3>Observation Residuals</h3>
-                    <div class="form-group" style="max-width: 280px; margin-bottom: 14px;">
+                    <div class="form-group u-max-w-sm u-mb-14">
                         <label for="residual-threshold-input">Residual Flag Threshold (ft)</label>
                         <input id="residual-threshold-input" type="number" step="0.0001" min="0" value="{{ '%.4f'|format(residual_threshold) }}">
                     </div>
@@ -343,7 +344,7 @@
                             </form>
 
                             {% if current_circuit_candidates %}
-                            <h4 style="margin-top: 24px;">Available Next Points</h4>
+                            <h4 class="u-mt-24">Available Next Points</h4>
                             <form method="POST">
                                 <input type="hidden" name="action" value="choose_next_point">
                                 <input type="hidden" name="active_stage" value="adjustment">
@@ -453,7 +454,7 @@
                                 </form>
                             </div>
 
-                            <div class="download-actions" style="margin-top: 16px;">
+                            <div class="download-actions u-mt-16">
                                 <form method="POST">
                                     <input type="hidden" name="action" value="download_circuits_state">
                                     <input type="hidden" name="active_stage" value="adjustment">
@@ -566,7 +567,7 @@
                                 ">
                                     <td><input type="checkbox" name="delete_circuit_id" value="{{ row.Circuit_ID }}"></td>
                                     <td>{{ row.Circuit_ID }}</td>
-                                    <td>{{ row.Circuit_Type }}</td>
+                                    <td>{{ status_badge(row.Circuit_Type) }}</td>
                                     <td>{{ row.Point_Count }}</td>
                                     <td>{{ row.Leg_Count }}</td>
                                     <td>{{ row.Start_Point }}</td>
@@ -587,12 +588,12 @@
                     </form>
 
                     {% if unanchored_circuit_options %}
-                    <div class="inline-message" style="margin-top: 16px;">
+                    <div class="inline-message u-mt-16">
                         <strong>Anchor free-to-free circuits:</strong>
                         <p>Select a point in each free-to-free circuit and enter a known elevation to calculate elevations for the rest of that circuit.</p>
                     </div>
                     <div class="table-wrap anchor-circuit-table-wrap">
-                        <div style="display: none;">
+                        <div class="u-hidden">
                             {% for option in unanchored_circuit_options %}
                             {% set form_id = "anchor-form-" ~ loop.index %}
                             <form id="{{ form_id }}" method="POST">

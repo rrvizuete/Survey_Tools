@@ -150,6 +150,20 @@ tbody tr:hover td { background: var(--blue-soft); }
 .circuit-builder-layout { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)) minmax(0,1.1fr); gap: 16px; }
 .circuit-builder-layout > * { min-width: 0; padding: 18px; background: #fafbfc; border: 1px solid var(--line); border-radius: 10px; }
 
+.badge { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; white-space: nowrap; }
+.badge-pass { background: #e6f4ec; color: var(--success); }
+.badge-warn { background: #fdf1de; color: var(--warning); }
+.badge-fail { background: #fbe9ea; color: var(--danger); }
+.badge-neutral { background: #edf1f5; color: var(--muted); }
+
+.u-max-w-sm { max-width: 280px; }
+.u-max-w-md { max-width: 320px; }
+.u-mt-16 { margin-top: 16px; }
+.u-mt-24 { margin-top: 24px; }
+.u-mb-14 { margin-bottom: 14px; }
+.u-mb-16 { margin-bottom: 16px; }
+.u-hidden { display: none; }
+
 .modal-overlay { display: none; position: fixed; inset: 0; z-index: 20; align-items: center; justify-content: center; padding: 24px; background: rgba(8,20,35,.68); backdrop-filter: blur(4px); }
 .modal-overlay.open { display: flex; }
 .modal-card { width: min(720px,100%); max-height: calc(100vh - 48px); overflow-y: auto; padding: 26px; background: #fff; border-radius: 16px; box-shadow: 0 20px 55px rgba(11,23,40,.2); }

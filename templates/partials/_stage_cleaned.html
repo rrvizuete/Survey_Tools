@@ -1,3 +1,4 @@
+            {% from "partials/_macros.html" import status_badge %}
             <div id="stage-cleaned" class="stage-panel {% if active_stage == 'cleaned' %}active{% endif %}">
                 <h2>Cleaned Leg Means</h2>
                 <p class="help-text">
@@ -45,7 +46,7 @@
                                         {{ "%.4f"|format(row.Standard_Deviation) }}
                                     {% endif %}
                                 </td>
-                                <td>{{ row.Status }}</td>
+                                <td>{{ status_badge(row.Status) }}</td>
                             </tr>
                             {% endfor %}
                         </tbody>
