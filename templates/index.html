@@ -9,13 +9,19 @@
 <body>
     <div class="container">
         <header class="page-header">
-            <h1>Leveling Adjustment App</h1>
+            <p class="eyebrow">Survey computation workspace</p>
+            <h1>Leveling Adjustment</h1>
             <p>Version 1.4 — Circuit Builder (Phase 3)</p>
         </header>
 
-        <section class="card">
-            <h2>Upload Data</h2>
-            <button type="button" onclick="openHelpModal()" style="margin-bottom: 12px;">Input File & Method Help</button>
+        <section class="card upload-card">
+            <div class="section-heading">
+                <div>
+                    <h2>Start an analysis</h2>
+                    <p>Upload a prepared workbook and select the adjustment method.</p>
+                </div>
+                <button class="button-secondary" type="button" onclick="openHelpModal()">Input guide</button>
+            </div>
             <form method="POST" enctype="multipart/form-data">
                 <input type="hidden" name="action" value="process">
                 <input type="hidden" name="active_stage" class="active-stage-input" value="{{ active_stage }}">

@@ -2,6 +2,9 @@ from flask import Flask, render_template, request, send_file
 import pandas as pd
 from io import StringIO, BytesIO
 import json
+import math
+import os
+from markupsafe import escape
 
 from core.leg_computation import validate_field_data, compute_legs
 from core.repeated_leg_analysis import analyze_repeated_legs
@@ -23,6 +26,7 @@ from core.circuit_adjustment import compute_circuit_adjustment
 from core.export_helpers import export_analysis_workbook
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 
 
 def sort_summary_df(summary_df: pd.DataFrame) -> pd.DataFrame:
@@ -168,6 +172,31 @@ def parse_saved_circuits(json_text: str):
     return normalize_saved_circuits(json.loads(json_text))
 
 
+def parse_circuit_path(json_text: str) -> list[str]:
+    if not json_text:
+        return []
+    return normalize_circuit_path(json.loads(json_text))
+
+
+def normalize_circuit_path(path) -> list[str]:
+    if not isinstance(path, list):
+        raise ValueError("Circuit path must be a JSON list.")
+    if len(path) > 10_000:
+        raise ValueError("Circuit path is too large.")
+
+    normalized = []
+    for point in path:
+        if point is None or isinstance(point, (dict, list, bool)):
+            raise ValueError("Circuit point identifiers must be scalar values.")
+        point_id = str(point).strip()
+        if not point_id:
+            raise ValueError("Circuit point identifiers cannot be empty.")
+        if len(point_id) > 500:
+            raise ValueError("Circuit point identifiers cannot exceed 500 characters.")
+        normalized.append(point_id)
+    return normalized
+
+
 def renumber_saved_circuits(saved_circuits: list[dict]) -> list[dict]:
     for idx, circuit in enumerate(saved_circuits, start=1):
         circuit["Circuit_ID"] = f"CIR-{idx}"
@@ -175,12 +204,25 @@ def renumber_saved_circuits(saved_circuits: list[dict]) -> list[dict]:
 
 
 def normalize_saved_circuits(saved_circuits: list[dict]) -> list[dict]:
+    if not isinstance(saved_circuits, list):
+        raise ValueError("Saved circuits must be a list.")
+    if len(saved_circuits) > 10_000:
+        raise ValueError("Too many saved circuits were submitted.")
+
     normalized = []
     for idx, circuit in enumerate(saved_circuits, start=1):
-        path = [str(point) for point in circuit.get("Path", [])]
+        if not isinstance(circuit, dict):
+            raise ValueError("Each saved circuit must be a JSON object.")
+        path = normalize_circuit_path(circuit.get("Path", []))
+        circuit_id = circuit.get("Circuit_ID") or f"CIR-{idx}"
+        if isinstance(circuit_id, (dict, list, bool)):
+            raise ValueError("Circuit identifiers must be scalar values.")
+        circuit_id = str(circuit_id).strip()
+        if not circuit_id or len(circuit_id) > 500:
+            raise ValueError("Circuit identifiers must contain 1 to 500 characters.")
         normalized.append(
             {
-                "Circuit_ID": str(circuit.get("Circuit_ID") or f"CIR-{idx}"),
+                "Circuit_ID": circuit_id,
                 "Path": path,
             }
         )
@@ -432,16 +474,16 @@ def index():
         tolerance_raw = request.form.get("tolerance", "0.005")
         try:
             tolerance = float(tolerance_raw)
-            if tolerance <= 0:
-                errors.append("Tolerance must be greater than zero.")
+            if not math.isfinite(tolerance) or tolerance <= 0:
+                errors.append("Tolerance must be a finite number greater than zero.")
         except ValueError:
             errors.append("Tolerance must be a numeric value.")
 
         residual_threshold_raw = request.form.get("residual_threshold", "0.005")
         try:
             residual_threshold = float(residual_threshold_raw)
-            if residual_threshold < 0:
-                errors.append("Residual threshold must be zero or greater.")
+            if not math.isfinite(residual_threshold) or residual_threshold < 0:
+                errors.append("Residual threshold must be a finite number zero or greater.")
         except ValueError:
             errors.append("Residual threshold must be a numeric value.")
 
@@ -458,12 +500,12 @@ def index():
         saved_circuits_json = request.form.get("saved_circuits_json", "[]")
         current_circuit_path_json = request.form.get("current_circuit_path_json", "[]")
 
-        saved_circuits = parse_saved_circuits(saved_circuits_json)
-        current_circuit_path = json.loads(current_circuit_path_json) if current_circuit_path_json else []
-
         selected_exclusions = set(request.form.getlist("exclude_row"))
 
         try:
+            saved_circuits = parse_saved_circuits(saved_circuits_json)
+            current_circuit_path = parse_circuit_path(current_circuit_path_json)
+
             if action == "export_excel":
                 if not raw_json:
                     errors.append("No analysis data found to export.")
@@ -1292,7 +1334,7 @@ def index():
         current_circuit_type=current_circuit_type,
         current_circuit_message=current_circuit_message,
         saved_circuits=saved_circuits,
-        saved_circuits_json=json.dumps(saved_circuits),
+        saved_circuits_json=escape(json.dumps(saved_circuits)),
         unanchored_circuit_options=build_unanchored_circuit_options(
             saved_circuits,
             pd.DataFrame(control_data or []),
@@ -1314,4 +1356,4 @@ def index():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=os.environ.get("FLASK_DEBUG", "").lower() in {"1", "true", "yes"})

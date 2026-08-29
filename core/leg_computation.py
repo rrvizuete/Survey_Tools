@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 
 
@@ -110,14 +111,22 @@ def validate_field_data(df: pd.DataFrame):
     sequence_numeric = pd.to_numeric(work["Sequence"], errors="coerce")
     elevation_numeric = pd.to_numeric(work["Raw_Elevation"], errors="coerce")
 
-    bad_seq = sequence_numeric.isna()
-    bad_elev = elevation_numeric.isna()
+    bad_seq = sequence_numeric.isna() | ~np.isfinite(sequence_numeric)
+    non_integer_seq = ~bad_seq & (sequence_numeric % 1 != 0)
+    bad_elev = elevation_numeric.isna() | ~np.isfinite(elevation_numeric)
 
     if bad_seq.any():
         rows = work.index[bad_seq].tolist()
 
         warnings.append(
             f"Discarded rows with non-numeric Sequence values at Excel rows: "
+            f"{', '.join(str(i + 2) for i in rows)}"
+        )
+
+    if non_integer_seq.any():
+        rows = work.index[non_integer_seq].tolist()
+        warnings.append(
+            f"Discarded rows with non-integer Sequence values at Excel rows: "
             f"{', '.join(str(i + 2) for i in rows)}"
         )
 
@@ -129,7 +138,7 @@ def validate_field_data(df: pd.DataFrame):
             f"{', '.join(str(i + 2) for i in rows)}"
         )
 
-    valid_mask = ~(bad_seq | bad_elev)
+    valid_mask = ~(bad_seq | non_integer_seq | bad_elev)
 
     work = work.loc[valid_mask].copy()
     sequence_numeric = sequence_numeric.loc[valid_mask]

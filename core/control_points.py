@@ -1,3 +1,5 @@
+import math
+import numpy as np
 import pandas as pd
 
 
@@ -66,7 +68,7 @@ def validate_control_points(df: pd.DataFrame):
     work = work.loc[~empty_id_mask].copy()
 
     elevation_numeric = pd.to_numeric(work["Elevation"], errors="coerce")
-    bad_elev_mask = elevation_numeric.isna()
+    bad_elev_mask = elevation_numeric.isna() | ~np.isfinite(elevation_numeric)
     if bad_elev_mask.any():
         bad_rows = work.index[bad_elev_mask].tolist()
         warnings.append(
@@ -143,6 +145,8 @@ def apply_anchor_elevation(control_df: pd.DataFrame, point_id: str, elevation_va
         elevation = float(elevation_value)
     except (TypeError, ValueError):
         return work, ["Anchor elevation must be a numeric value."]
+    if not math.isfinite(elevation):
+        return work, ["Anchor elevation must be a finite numeric value."]
 
     work["PointID"] = work["PointID"].astype(str)
 

@@ -26,7 +26,9 @@ def find_fixed_to_fixed_paths(graph, fixed_points, max_depth=50):
     seen = set()
 
     for p in paths:
-        key = tuple(sorted(p))
+        forward = tuple(p)
+        reverse = tuple(reversed(p))
+        key = min(forward, reverse)
         if key not in seen:
             seen.add(key)
             unique.append(p)
