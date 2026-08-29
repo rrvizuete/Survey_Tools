@@ -17,7 +17,7 @@
 
                 <div class="form-group u-max-w-md u-mb-16">
                     <label for="adjustment_mode_display">Adjustment Mode</label>
-                    <form method="POST">
+                    <form method="POST" data-ajax="true">
                         <input type="hidden" name="action" value="switch_adjustment_mode">
                         <input type="hidden" name="active_stage" value="adjustment">
                         <input type="hidden" name="active_tab" value="{{ active_tab }}">
@@ -31,7 +31,7 @@
                         <input type="hidden" name="cleaned_json" value='{{ cleaned_data|tojson|safe }}'>
                         <input type="hidden" name="saved_circuits_json" value='{{ saved_circuits_json|safe }}'>
                         <input type="hidden" name="current_circuit_path_json" value='{{ current_circuit_path|tojson|safe }}'>
-                        <select id="adjustment_mode_display" name="adjustment_mode" onchange="this.form.submit()">
+                        <select id="adjustment_mode_display" name="adjustment_mode" onchange="submitFormCompat(this.form)">
                             <option value="network" {% if adjustment_mode == 'network' %}selected{% endif %}>Network Least Squares</option>
                             <option value="circuit" {% if adjustment_mode == 'circuit' %}selected{% endif %}>Circuit Closure / Proration</option>
                         </select>
@@ -139,7 +139,7 @@
                 <div id="adjustment-tab-control" class="tab-panel {% if active_adjustment_tab == 'control' %}active{% endif %}">
                     <h3>Control Points</h3>
                     {% if control_data %}
-                    <form method="POST">
+                    <form method="POST" data-ajax="true">
                         <input type="hidden" name="action" value="apply_fixed_points">
                         <input type="hidden" name="active_stage" class="active-stage-input" value="adjustment">
                         <input type="hidden" name="active_tab" class="active-tab-input" value="{{ active_tab }}">
@@ -314,7 +314,7 @@
                     <div class="circuit-builder-layout">
                         <div>
                             <h4>Start New Circuit</h4>
-                            <form method="POST">
+                            <form method="POST" data-ajax="true">
                                 <input type="hidden" name="action" value="start_circuit">
                                 <input type="hidden" name="active_stage" value="adjustment">
                                 <input type="hidden" name="active_tab" value="{{ active_tab }}">
@@ -345,7 +345,7 @@
 
                             {% if current_circuit_candidates %}
                             <h4 class="u-mt-24">Available Next Points</h4>
-                            <form method="POST">
+                            <form method="POST" data-ajax="true">
                                 <input type="hidden" name="action" value="choose_next_point">
                                 <input type="hidden" name="active_stage" value="adjustment">
                                 <input type="hidden" name="active_tab" value="{{ active_tab }}">
@@ -399,7 +399,7 @@
                             <p><strong>Current Type:</strong> {{ current_circuit_type if current_circuit_type else '—' }}</p>
 
                             <div class="download-actions">
-                                <form method="POST">
+                                <form method="POST" data-ajax="true">
                                     <input type="hidden" name="action" value="undo_circuit_point">
                                     <input type="hidden" name="active_stage" value="adjustment">
                                     <input type="hidden" name="active_tab" value="{{ active_tab }}">
@@ -417,7 +417,7 @@
                                     <button type="submit">Undo</button>
                                 </form>
 
-                                <form method="POST">
+                                <form method="POST" data-ajax="true">
                                     <input type="hidden" name="action" value="clear_circuit">
                                     <input type="hidden" name="active_stage" value="adjustment">
                                     <input type="hidden" name="active_tab" value="{{ active_tab }}">
@@ -435,7 +435,7 @@
                                     <button type="submit">Clear</button>
                                 </form>
 
-                                <form method="POST">
+                                <form method="POST" data-ajax="true">
                                     <input type="hidden" name="action" value="save_circuit">
                                     <input type="hidden" name="active_stage" value="adjustment">
                                     <input type="hidden" name="active_tab" value="{{ active_tab }}">
@@ -473,7 +473,7 @@
                                     <button type="submit">Export Circuits JSON</button>
                                 </form>
 
-                                <form method="POST" enctype="multipart/form-data">
+                                <form method="POST" enctype="multipart/form-data" data-ajax="true">
                                     <input type="hidden" name="action" value="apply_uploaded_circuits">
                                     <input type="hidden" name="active_stage" value="adjustment">
                                     <input type="hidden" name="active_tab" value="{{ active_tab }}">
@@ -489,7 +489,7 @@
                                     <input type="hidden" name="decision_json" value='{{ decision_data|tojson|safe }}'>
                                     <input type="hidden" name="cleaned_json" value='{{ cleaned_data|tojson|safe }}'>
                                     <label for="circuits_state_file" class="file-trigger">Import Circuits JSON</label>
-                                    <input type="file" id="circuits_state_file" name="circuits_state_file" accept=".json" class="u-hidden" onchange="this.form.submit()">
+                                    <input type="file" id="circuits_state_file" name="circuits_state_file" accept=".json" class="u-hidden" onchange="submitFormCompat(this.form)">
                                 </form>
                             </div>
                         </div>
@@ -522,7 +522,7 @@
                 <div id="adjustment-tab-circuit_summary" class="tab-panel {% if active_adjustment_tab == 'circuit_summary' %}active{% endif %}">
                     <h3>Circuit Summary</h3>
                     {% if circuit_summary_data %}
-                    <form method="POST">
+                    <form method="POST" data-ajax="true">
                         <input type="hidden" name="action" value="delete_selected_circuits">
                         <input type="hidden" name="active_stage" value="adjustment">
                         <input type="hidden" name="active_tab" value="{{ active_tab }}">
@@ -596,7 +596,7 @@
                         <div class="u-hidden">
                             {% for option in unanchored_circuit_options %}
                             {% set form_id = "anchor-form-" ~ loop.index %}
-                            <form id="{{ form_id }}" method="POST">
+                            <form id="{{ form_id }}" method="POST" data-ajax="true">
                                 <input type="hidden" name="action" value="apply_circuit_anchor">
                                 <input type="hidden" name="active_stage" value="adjustment">
                                 <input type="hidden" name="active_tab" value="{{ active_tab }}">
@@ -728,7 +728,7 @@
                 <div id="adjustment-tab-control" class="tab-panel {% if active_adjustment_tab == 'control' %}active{% endif %}">
                     <h3>Control Points</h3>
                     {% if control_data %}
-                    <form method="POST">
+                    <form method="POST" data-ajax="true">
                         <input type="hidden" name="action" value="apply_fixed_points">
                         <input type="hidden" name="active_stage" value="adjustment">
                         <input type="hidden" name="active_tab" value="{{ active_tab }}">

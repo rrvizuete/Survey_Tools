@@ -104,7 +104,7 @@
                 <div id="tab-decisions" class="tab-panel {% if active_tab == 'decisions' %}active{% endif %}">
                     <h2>Observation Decisions</h2>
 
-                    <form method="POST">
+                    <form method="POST" data-ajax="true">
                         <input type="hidden" name="action" value="apply_exclusions">
                         <input type="hidden" name="active_stage" class="active-stage-input" value="{{ active_stage }}">
                         <input type="hidden" name="active_tab" class="active-tab-input" value="decisions">
@@ -211,7 +211,7 @@
                             <button type="submit">Download Exclusion State</button>
                         </form>
 
-                        <form method="POST" enctype="multipart/form-data">
+                        <form method="POST" enctype="multipart/form-data" data-ajax="true">
                             <input type="hidden" name="action" value="apply_uploaded_exclusions">
                             <input type="hidden" name="active_stage" value="review">
                             <input type="hidden" name="active_tab" value="decisions">
@@ -227,7 +227,7 @@
                             <input type="hidden" name="decision_json" value='{{ decision_data|tojson|safe }}'>
                             <input type="hidden" name="cleaned_json" value='{{ cleaned_data|tojson|safe }}'>
                             <label for="exclusion_state_file" class="file-trigger">Upload Exclusion State</label>
-                            <input type="file" id="exclusion_state_file" name="exclusion_state_file" accept=".json" class="u-hidden" onchange="this.form.submit()">
+                            <input type="file" id="exclusion_state_file" name="exclusion_state_file" accept=".json" class="u-hidden" onchange="submitFormCompat(this.form)">
                         </form>
                     </div>
 

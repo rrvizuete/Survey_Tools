@@ -26,6 +26,20 @@ def get_all_available_points(graph: dict):
     return sorted(graph.keys(), key=natural_sort_key)
 
 
+def graph_to_edge_list(graph: dict):
+    """Flatten the undirected adjacency-set graph into a deduped [[a, b], ...] edge list."""
+    seen = set()
+    edges = []
+    for point, neighbors in graph.items():
+        for neighbor in neighbors:
+            key = tuple(sorted((point, neighbor)))
+            if key in seen:
+                continue
+            seen.add(key)
+            edges.append([key[0], key[1]])
+    return edges
+
+
 def get_next_candidate_points(graph: dict, current_path: list[str]):
     if not current_path:
         return []

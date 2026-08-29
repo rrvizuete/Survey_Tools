@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, send_file
+from flask import Flask, render_template, request, send_file, jsonify
 import pandas as pd
 from io import StringIO, BytesIO
 import json
@@ -25,6 +25,7 @@ from core.circuit_builder import (
     get_next_candidate_points,
     auto_extend_circuit,
     classify_circuit_path,
+    graph_to_edge_list,
 )
 from core.circuit_adjustment import compute_circuit_adjustment, build_circuit_adjustment_summary
 from core.export_helpers import export_analysis_workbook
@@ -1404,8 +1405,19 @@ def index():
         decision_data, cleaned_data, network_summary, circuit_summary_stats, adjustment_mode
     )
 
-    return render_template(
-        "index.html",
+    circuit_graph_edges = []
+    if cleaned_data:
+        display_graph, _usable = build_graph_from_cleaned_legs(pd.DataFrame(cleaned_data))
+        circuit_graph_edges = graph_to_edge_list(display_graph)
+    fixed_points_list = sorted(
+        {
+            str(row["PointID"])
+            for row in (control_data or [])
+            if str(row.get("Fixed", "")).upper() == "Y"
+        }
+    )
+
+    context = dict(
         raw_data=raw_data,
         control_data=control_data,
         leg_data=leg_data,
@@ -1422,6 +1434,8 @@ def index():
         circuit_legs_data=circuit_legs_data,
         circuit_elevations_data=circuit_elevations_data,
         circuit_summary_stats=circuit_summary_stats,
+        circuit_graph_edges=circuit_graph_edges,
+        fixed_points_list=fixed_points_list,
         stage_progress=stage_progress,
         current_circuit_path=current_circuit_path,
         current_circuit_candidates=current_circuit_candidates,
@@ -1448,6 +1462,45 @@ def index():
         active_adjustment_tab=active_adjustment_tab,
         adjustment_mode=adjustment_mode,
     )
+
+    if request.method == "POST" and request.headers.get("X-Requested-With") == "fetch":
+        panels = {"flash-messages": render_template("partials/_flash_messages.html", **context)}
+
+        adjustment_only_actions = {
+            "apply_fixed_points",
+            "switch_adjustment_mode",
+            "start_circuit",
+            "choose_next_point",
+            "undo_circuit_point",
+            "clear_circuit",
+            "save_circuit",
+            "delete_selected_circuits",
+            "apply_circuit_anchor",
+            "apply_uploaded_circuits",
+        }
+        full_refresh_actions = {"apply_exclusions", "apply_uploaded_exclusions"}
+
+        if action in full_refresh_actions:
+            panels["stage-review"] = render_template("partials/_stage_review.html", **context)
+            panels["stage-cleaned"] = render_template("partials/_stage_cleaned.html", **context)
+            panels["stage-adjustment"] = render_template("partials/_stage_adjustment.html", **context)
+        elif action in adjustment_only_actions:
+            panels["stage-adjustment"] = render_template("partials/_stage_adjustment.html", **context)
+        else:
+            panels["stage-review"] = render_template("partials/_stage_review.html", **context)
+            panels["stage-cleaned"] = render_template("partials/_stage_cleaned.html", **context)
+            panels["stage-adjustment"] = render_template("partials/_stage_adjustment.html", **context)
+
+        return jsonify(
+            {
+                "active_stage": active_stage,
+                "active_tab": active_tab,
+                "active_adjustment_tab": active_adjustment_tab,
+                "panels": panels,
+            }
+        )
+
+    return render_template("index.html", **context)
 
 
 if __name__ == "__main__":

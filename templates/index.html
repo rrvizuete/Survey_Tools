@@ -91,34 +91,7 @@
             </div>
         </div>
 
-        {% if errors %}
-        <section class="card error-card">
-            <h2>Errors</h2>
-            <ul>
-                {% for error in errors %}
-                <li>{{ error }}</li>
-                {% endfor %}
-            </ul>
-        </section>
-        {% endif %}
-
-        {% if warnings %}
-        <section class="card warning-card">
-            <h2>Warnings</h2>
-            <ul>
-                {% for warning in warnings %}
-                <li>{{ warning }}</li>
-                {% endfor %}
-            </ul>
-        </section>
-        {% endif %}
-
-        {% if success_message %}
-        <section class="card success-card">
-            <p>{{ success_message }}</p>
-            <p><strong>Tolerance used:</strong> {{ "%.4f"|format(tolerance) }} ft</p>
-        </section>
-        {% endif %}
+        {% include "partials/_flash_messages.html" %}
 
         {% if raw_data or leg_data or summary_data or decision_data or cleaned_data %}
         <section class="card">
@@ -183,7 +156,7 @@
 
             document.getElementById('stage-' + stageName).classList.add('active');
 
-            const clickedButton = Array.from(document.querySelectorAll('.stage-button'))
+            const clickedButton = Array.from(document.querySelectorAll('.step'))
                 .find(btn => btn.getAttribute('onclick') === "showStage('" + stageName + "')");
             if (clickedButton) {
                 clickedButton.classList.add('active');
@@ -254,12 +227,73 @@
             document.getElementById('help-modal').classList.remove('open');
         }
 
-        document.addEventListener('DOMContentLoaded', () => {
+        function submitFormCompat(form) {
+            if (form.requestSubmit) {
+                form.requestSubmit();
+            } else {
+                form.submit();
+            }
+        }
+
+        function handleAjaxSubmit(event) {
+            event.preventDefault();
+            const form = event.target;
+
+            fetch(form.getAttribute('action') || window.location.href, {
+                method: 'POST',
+                body: new FormData(form),
+                headers: { 'X-Requested-With': 'fetch' },
+            })
+                .then(response => response.json())
+                .then(data => applyAjaxResponse(data))
+                .catch(() => {
+                    form.removeEventListener('submit', handleAjaxSubmit);
+                    submitFormCompat(form);
+                });
+        }
+
+        function applyAjaxResponse(data) {
+            Object.keys(data.panels || {}).forEach(panelId => {
+                const el = document.getElementById(panelId);
+                if (el) {
+                    el.outerHTML = data.panels[panelId];
+                }
+            });
+
+            showStage(data.active_stage);
+            if (data.active_stage === 'review') {
+                showTab(data.active_tab);
+            }
+            if (data.active_stage === 'adjustment') {
+                showAdjustmentTab(data.active_adjustment_tab);
+            }
+
+            bindDynamicHandlers();
+        }
+
+        function bindDynamicHandlers() {
             const thresholdInput = document.getElementById('residual-threshold-input');
-            if (thresholdInput) {
+            if (thresholdInput && !thresholdInput.dataset.bound) {
+                thresholdInput.dataset.bound = 'true';
                 thresholdInput.addEventListener('input', applyResidualFlags);
             }
             applyResidualFlags();
+
+            document.querySelectorAll('form[data-ajax="true"]').forEach(form => {
+                if (form.dataset.ajaxBound) return;
+                form.dataset.ajaxBound = 'true';
+                form.addEventListener('submit', handleAjaxSubmit);
+            });
+
+            if (window.enhanceAllTables) {
+                window.enhanceAllTables(document);
+            }
+
+            document.dispatchEvent(new CustomEvent('panels:updated'));
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            bindDynamicHandlers();
         });
     </script>
 </body>

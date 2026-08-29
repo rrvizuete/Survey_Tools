@@ -1,0 +1,30 @@
+<div id="flash-messages">
+    {% if errors %}
+    <section class="card error-card">
+        <h2>Errors</h2>
+        <ul>
+            {% for error in errors %}
+            <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+    </section>
+    {% endif %}
+
+    {% if warnings %}
+    <section class="card warning-card">
+        <h2>Warnings</h2>
+        <ul>
+            {% for warning in warnings %}
+            <li>{{ warning }}</li>
+            {% endfor %}
+        </ul>
+    </section>
+    {% endif %}
+
+    {% if success_message %}
+    <section class="card success-card">
+        <p>{{ success_message }}</p>
+        <p><strong>Tolerance used:</strong> {{ "%.4f"|format(tolerance) }} ft</p>
+    </section>
+    {% endif %}
+</div>
