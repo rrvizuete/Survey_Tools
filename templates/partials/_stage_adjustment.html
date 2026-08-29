@@ -1,6 +1,8 @@
             <div id="stage-adjustment" class="stage-panel {% if active_stage == 'adjustment' %}active{% endif %}">
                 <h2>Adjustment</h2>
 
+                {% include "partials/_summary_card.html" %}
+
                 {% if adjustment_messages %}
                 <div class="inline-message">
                     <strong>Adjustment messages:</strong>

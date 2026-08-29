@@ -644,3 +644,45 @@ def run_network_adjustment(cleaned_df: pd.DataFrame, control_df: pd.DataFrame):
         errors,
         warnings,
     )
+
+
+def build_network_adjustment_summary(connectivity_data, observation_residuals_data):
+    """Roll up connectivity_df/observation_residuals_df records into an at-a-glance status."""
+    if not connectivity_data:
+        return None
+
+    components_total = len(connectivity_data)
+    components_not_adjustable = sum(
+        1 for row in connectivity_data if row.get("Status") == "Not Adjustable"
+    )
+    components_exact = sum(
+        1 for row in connectivity_data if row.get("Redundancy_Status") == "Exact Solution"
+    )
+    degrees_of_freedom = sum(
+        row.get("Degrees_Of_Freedom", 0)
+        for row in connectivity_data
+        if row.get("Status") == "Adjustable"
+    )
+
+    used_residuals = [
+        abs(row["Residual"])
+        for row in (observation_residuals_data or [])
+        if row.get("Used_In_Adjustment") == "Y" and row.get("Residual") != ""
+    ]
+    observations_total = len(observation_residuals_data or [])
+    observations_used = sum(
+        1 for row in (observation_residuals_data or []) if row.get("Used_In_Adjustment") == "Y"
+    )
+
+    overall_status = "Attention" if components_not_adjustable > 0 else "Pass"
+
+    return {
+        "overall_status": overall_status,
+        "components_total": components_total,
+        "components_not_adjustable": components_not_adjustable,
+        "components_exact": components_exact,
+        "degrees_of_freedom": degrees_of_freedom,
+        "max_residual": max(used_residuals) if used_residuals else None,
+        "observations_used": observations_used,
+        "observations_total": observations_total,
+    }

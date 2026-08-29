@@ -127,6 +127,17 @@ tbody tr:hover td { background: var(--blue-soft); }
 .excluded-row td { background: #f0f2f5; color: var(--muted); }
 .flagged-residual-row td { background: #ffe7e8; }
 
+.summary-card { margin-bottom: 20px; padding: 16px 18px; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--success); border-radius: var(--radius); box-shadow: var(--shadow); }
+.summary-status-attention { border-left-color: var(--warning); }
+.summary-headline { display: flex; align-items: center; gap: 9px; margin-bottom: 14px; font-size: 15px; }
+.summary-status-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--success); }
+.summary-status-attention .summary-status-dot { background: var(--warning); }
+.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; }
+.summary-stat { display: flex; flex-direction: column; gap: 4px; }
+.summary-stat-label { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.summary-stat-value { color: var(--ink); font-size: 18px; font-weight: 700; }
+.summary-stat-flag { color: var(--warning); font-size: 12px; font-weight: 600; }
+
 .actions, .export-form { margin-top: 18px; }
 .help-text { margin-top: 0; color: #465267; }
 .inline-message { margin-bottom: 16px; padding: 13px 15px; background: #fff8e8; border: 1px solid #ecd4a3; border-radius: 7px; color: #6e4b18; }

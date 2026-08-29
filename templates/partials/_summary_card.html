@@ -1,0 +1,60 @@
+{% if adjustment_mode == 'network' and network_summary %}
+<div class="summary-card summary-status-{{ 'pass' if network_summary.overall_status == 'Pass' else 'attention' }}">
+    <div class="summary-headline">
+        <span class="summary-status-dot"></span>
+        <strong>{{ 'Adjustment OK' if network_summary.overall_status == 'Pass' else 'Needs Attention' }}</strong>
+    </div>
+    <div class="summary-grid">
+        <div class="summary-stat">
+            <span class="summary-stat-label">Degrees of Freedom</span>
+            <span class="summary-stat-value">{{ network_summary.degrees_of_freedom }}</span>
+        </div>
+        <div class="summary-stat">
+            <span class="summary-stat-label">Components</span>
+            <span class="summary-stat-value">
+                {{ network_summary.components_total }}
+                {% if network_summary.components_not_adjustable %}
+                <span class="summary-stat-flag">({{ network_summary.components_not_adjustable }} not adjustable)</span>
+                {% endif %}
+            </span>
+        </div>
+        <div class="summary-stat">
+            <span class="summary-stat-label">Max Residual</span>
+            <span class="summary-stat-value">
+                {% if network_summary.max_residual is none %}—{% else %}{{ "%.4f"|format(network_summary.max_residual) }} ft{% endif %}
+            </span>
+        </div>
+        <div class="summary-stat">
+            <span class="summary-stat-label">Observations Used</span>
+            <span class="summary-stat-value">{{ network_summary.observations_used }} / {{ network_summary.observations_total }}</span>
+        </div>
+    </div>
+</div>
+{% elif adjustment_mode == 'circuit' and circuit_summary_stats %}
+<div class="summary-card summary-status-{{ 'pass' if circuit_summary_stats.overall_status == 'Pass' else 'attention' }}">
+    <div class="summary-headline">
+        <span class="summary-status-dot"></span>
+        <strong>{{ 'All Circuits OK' if circuit_summary_stats.overall_status == 'Pass' else 'Needs Attention' }}</strong>
+    </div>
+    <div class="summary-grid">
+        <div class="summary-stat">
+            <span class="summary-stat-label">Circuits</span>
+            <span class="summary-stat-value">{{ circuit_summary_stats.circuits_total }}</span>
+        </div>
+        <div class="summary-stat">
+            <span class="summary-stat-label">Adjusted</span>
+            <span class="summary-stat-value">{{ circuit_summary_stats.circuits_ok }}</span>
+        </div>
+        <div class="summary-stat">
+            <span class="summary-stat-label">Needs Attention</span>
+            <span class="summary-stat-value">{{ circuit_summary_stats.circuits_attention }}</span>
+        </div>
+        <div class="summary-stat">
+            <span class="summary-stat-label">Max Closure Error</span>
+            <span class="summary-stat-value">
+                {% if circuit_summary_stats.max_closure_error is none %}—{% else %}{{ "%.4f"|format(circuit_summary_stats.max_closure_error) }} ft{% endif %}
+            </span>
+        </div>
+    </div>
+</div>
+{% endif %}

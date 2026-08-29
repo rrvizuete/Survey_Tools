@@ -14,7 +14,11 @@ from core.control_points import (
     update_control_fixed_flags,
     apply_anchor_elevation,
 )
-from core.network_adjustment import natural_sort_key, run_network_adjustment
+from core.network_adjustment import (
+    natural_sort_key,
+    run_network_adjustment,
+    build_network_adjustment_summary,
+)
 from core.circuit_builder import (
     build_graph_from_cleaned_legs,
     get_all_available_points,
@@ -22,7 +26,7 @@ from core.circuit_builder import (
     auto_extend_circuit,
     classify_circuit_path,
 )
-from core.circuit_adjustment import compute_circuit_adjustment
+from core.circuit_adjustment import compute_circuit_adjustment, build_circuit_adjustment_summary
 from core.export_helpers import export_analysis_workbook
 
 app = Flask(__name__)
@@ -1312,6 +1316,9 @@ def index():
         except Exception as exc:
             errors.append(f"Unexpected error while processing the file: {exc}")
 
+    network_summary = build_network_adjustment_summary(connectivity_data, observation_residuals_data)
+    circuit_summary_stats = build_circuit_adjustment_summary(circuit_summary_data)
+
     return render_template(
         "index.html",
         raw_data=raw_data,
@@ -1325,9 +1332,11 @@ def index():
         control_checks_data=control_checks_data,
         connectivity_data=connectivity_data,
         sections_data=sections_data,
+        network_summary=network_summary,
         circuit_summary_data=circuit_summary_data,
         circuit_legs_data=circuit_legs_data,
         circuit_elevations_data=circuit_elevations_data,
+        circuit_summary_stats=circuit_summary_stats,
         current_circuit_path=current_circuit_path,
         current_circuit_candidates=current_circuit_candidates,
         available_start_points=available_start_points,

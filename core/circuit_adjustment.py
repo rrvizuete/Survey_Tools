@@ -296,3 +296,34 @@ def compute_circuit_adjustment(
         errors,
         warnings,
     )
+
+
+_OK_STATUS_PREFIXES = ("Adjusted by closure proration.", "Open branch from fixed point.")
+
+
+def build_circuit_adjustment_summary(circuit_summary_data):
+    """Roll up circuit_summary_df records into an at-a-glance status."""
+    if not circuit_summary_data:
+        return None
+
+    circuits_total = len(circuit_summary_data)
+    circuits_ok = sum(
+        1
+        for row in circuit_summary_data
+        if str(row.get("Status", "")).startswith(_OK_STATUS_PREFIXES)
+    )
+    circuits_attention = circuits_total - circuits_ok
+
+    fixed_to_fixed_closures = [
+        abs(row["Closure_Error"])
+        for row in circuit_summary_data
+        if row.get("Circuit_Type") == "Fixed to Fixed" and row.get("Closure_Error") != ""
+    ]
+
+    return {
+        "overall_status": "Attention" if circuits_attention > 0 else "Pass",
+        "circuits_total": circuits_total,
+        "circuits_ok": circuits_ok,
+        "circuits_attention": circuits_attention,
+        "max_closure_error": max(fixed_to_fixed_closures) if fixed_to_fixed_closures else None,
+    }
