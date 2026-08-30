@@ -1,25 +1,7 @@
 (function () {
-    var WIDTH = 800;
-    var HEIGHT = 480;
-    var MAX_NODES = 300;
-
-    function fnv1aHash(str) {
-        var h = 0x811c9dc5;
-        for (var i = 0; i < str.length; i++) {
-            h ^= str.charCodeAt(i);
-            h = Math.imul(h, 0x01000193);
-        }
-        return h >>> 0;
-    }
-
-    function seededRandom(seed) {
-        var state = seed % 2147483647;
-        if (state <= 0) state += 2147483646;
-        return function () {
-            state = (state * 16807) % 2147483647;
-            return (state - 1) / 2147483646;
-        };
-    }
+    var WIDTH = 640;
+    var HEIGHT = 420;
+    var MAX_NEIGHBORS = 24;
 
     function escapeHtml(value) {
         return String(value).replace(/[&<>"']/g, function (c) {
@@ -27,175 +9,147 @@
         });
     }
 
-    function computeLayout(nodeIds, edges) {
-        var nodes = {};
-        nodeIds.forEach(function (id) {
-            var rand = seededRandom(fnv1aHash(id) || 1);
-            nodes[id] = { x: 40 + rand() * (WIDTH - 80), y: 40 + rand() * (HEIGHT - 80) };
-        });
-
-        if (nodeIds.length < 2) return nodes;
-
-        var area = WIDTH * HEIGHT;
-        var k = Math.sqrt(area / nodeIds.length);
-        var iterations = 150;
-
-        for (var iter = 0; iter < iterations; iter++) {
-            var temperature = k * (1 - iter / iterations) * 0.6;
-            var forces = {};
-            nodeIds.forEach(function (id) {
-                forces[id] = { fx: 0, fy: 0 };
-            });
-
-            for (var i = 0; i < nodeIds.length; i++) {
-                for (var j = i + 1; j < nodeIds.length; j++) {
-                    var a = nodes[nodeIds[i]];
-                    var b = nodes[nodeIds[j]];
-                    var dx = a.x - b.x;
-                    var dy = a.y - b.y;
-                    var dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
-                    var force = (k * k) / dist;
-                    var fx = (dx / dist) * force;
-                    var fy = (dy / dist) * force;
-                    forces[nodeIds[i]].fx += fx;
-                    forces[nodeIds[i]].fy += fy;
-                    forces[nodeIds[j]].fx -= fx;
-                    forces[nodeIds[j]].fy -= fy;
-                }
-            }
-
-            edges.forEach(function (edge) {
-                var a = nodes[edge[0]];
-                var b = nodes[edge[1]];
-                if (!a || !b) return;
-                var dx = a.x - b.x;
-                var dy = a.y - b.y;
-                var dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
-                var force = (dist * dist) / k;
-                var fx = (dx / dist) * force;
-                var fy = (dy / dist) * force;
-                forces[edge[0]].fx -= fx;
-                forces[edge[0]].fy -= fy;
-                forces[edge[1]].fx += fx;
-                forces[edge[1]].fy += fy;
-            });
-
-            nodeIds.forEach(function (id) {
-                var n = nodes[id];
-                var f = forces[id];
-                var centerFx = (WIDTH / 2 - n.x) * 0.01;
-                var centerFy = (HEIGHT / 2 - n.y) * 0.01;
-                f.fx += centerFx;
-                f.fy += centerFy;
-
-                var disp = Math.sqrt(f.fx * f.fx + f.fy * f.fy) || 0.01;
-                var limited = Math.min(disp, temperature || 1);
-                n.x += (f.fx / disp) * limited;
-                n.y += (f.fy / disp) * limited;
-                n.x = Math.max(24, Math.min(WIDTH - 24, n.x));
-                n.y = Math.max(24, Math.min(HEIGHT - 24, n.y));
-            });
+    function readData(container) {
+        var data = { edges: [], path: [], candidates: [], fixed: [], focus: "" };
+        try {
+            data.edges = JSON.parse(container.dataset.edges || "[]");
+            data.path = JSON.parse(container.dataset.path || "[]");
+            data.candidates = JSON.parse(container.dataset.candidates || "[]");
+            data.fixed = JSON.parse(container.dataset.fixed || "[]");
+            data.focus = JSON.parse(container.dataset.focus || '""');
+        } catch (e) {
+            /* leave defaults on malformed data */
         }
-
-        return nodes;
+        return data;
     }
 
-    function renderDiagram(container) {
-        var edges = [];
-        var path = [];
-        var candidates = [];
-        var fixedList = [];
-
-        try {
-            edges = JSON.parse(container.dataset.edges || "[]");
-            path = JSON.parse(container.dataset.path || "[]");
-            candidates = JSON.parse(container.dataset.candidates || "[]");
-            fixedList = JSON.parse(container.dataset.fixed || "[]");
-        } catch (e) {
-            container.innerHTML = "";
-            return;
-        }
-
-        var nodeSet = {};
+    function buildAdjacency(edges) {
+        var adjacency = {};
         edges.forEach(function (edge) {
-            nodeSet[edge[0]] = true;
-            nodeSet[edge[1]] = true;
+            var a = edge[0];
+            var b = edge[1];
+            if (!adjacency[a]) adjacency[a] = [];
+            if (!adjacency[b]) adjacency[b] = [];
+            if (adjacency[a].indexOf(b) === -1) adjacency[a].push(b);
+            if (adjacency[b].indexOf(a) === -1) adjacency[b].push(a);
         });
-        path.forEach(function (id) {
-            nodeSet[id] = true;
-        });
-        var nodeIds = Object.keys(nodeSet).sort();
+        return adjacency;
+    }
 
-        if (nodeIds.length === 0) {
-            container.innerHTML = "";
+    function currentFocus(data) {
+        if (data.path.length > 0) return data.path[data.path.length - 1];
+        var startSelect = document.getElementById("start_point");
+        return (startSelect && startSelect.value) || "";
+    }
+
+    function selectedCandidate() {
+        var nextSelect = document.getElementById("next_point");
+        return (nextSelect && nextSelect.value) || null;
+    }
+
+    function nodeMarkup(id, pos, isFocus, options) {
+        var classes = ["diagram-node"];
+        if (isFocus) classes.push("diagram-node-focus");
+        if (options.isPrevPathPoint) classes.push("diagram-node-path");
+        if (options.isCandidate) classes.push("diagram-node-candidate");
+        if (options.isSelected) classes.push("diagram-node-selected");
+
+        var safeId = escapeHtml(id);
+        var r = isFocus ? 12 : 8;
+        var shape;
+        if (options.isFixed) {
+            var side = r * 2;
+            shape =
+                '<rect x="' + (pos.x - r) + '" y="' + (pos.y - r) + '" width="' + side + '" height="' + side +
+                '" class="' + classes.join(" ") + '" data-point="' + safeId + '"></rect>';
+        } else {
+            shape =
+                '<circle cx="' + pos.x + '" cy="' + pos.y + '" r="' + r + '" class="' + classes.join(" ") +
+                '" data-point="' + safeId + '"></circle>';
+        }
+        var label = '<text x="' + pos.x + '" y="' + (pos.y - r - 8) + '" class="diagram-label">' + safeId + "</text>";
+        return shape + label;
+    }
+
+    function renderEgoView(container, adjacency, data) {
+        var focus = currentFocus(data);
+
+        if (!focus) {
+            container.innerHTML = '<p class="help-text diagram-placeholder">Select a start point above to preview its connections.</p>';
             return;
         }
 
-        if (nodeIds.length > MAX_NODES) {
+        var allNeighbors = (adjacency[focus] || []).slice().sort();
+        if (allNeighbors.length === 0) {
             container.innerHTML =
-                '<p class="help-text">Graph too large to visualize (' + nodeIds.length + " points).</p>";
+                '<p class="help-text diagram-placeholder">' + escapeHtml(focus) + " has no other leg connections.</p>";
             return;
         }
 
-        var positions = computeLayout(nodeIds, edges);
+        var overflow = allNeighbors.length - MAX_NEIGHBORS;
+        var neighbors = allNeighbors.slice(0, MAX_NEIGHBORS);
+
+        var centerX = WIDTH / 2;
+        var centerY = HEIGHT / 2;
+        var radius = Math.min(WIDTH, HEIGHT) / 2 - 70;
+        var positions = {};
+        positions[focus] = { x: centerX, y: centerY };
+        var count = neighbors.length;
+        neighbors.forEach(function (id, idx) {
+            var angle = (idx / count) * Math.PI * 2 - Math.PI / 2;
+            positions[id] = { x: centerX + radius * Math.cos(angle), y: centerY + radius * Math.sin(angle) };
+        });
+
         var fixedSet = {};
-        fixedList.forEach(function (id) {
+        data.fixed.forEach(function (id) {
             fixedSet[id] = true;
         });
         var candidateSet = {};
-        candidates.forEach(function (id) {
+        data.candidates.forEach(function (id) {
             candidateSet[id] = true;
         });
-        var pathIndex = {};
-        path.forEach(function (id, idx) {
-            pathIndex[id] = idx;
-        });
+        var prevPoint = data.path.length > 1 ? data.path[data.path.length - 2] : null;
+        var selected = selectedCandidate();
 
         var parts = [];
         parts.push('<svg viewBox="0 0 ' + WIDTH + " " + HEIGHT + '" class="circuit-diagram-svg">');
 
-        edges.forEach(function (edge) {
-            var a = positions[edge[0]];
-            var b = positions[edge[1]];
-            if (!a || !b) return;
+        neighbors.forEach(function (id) {
+            var b = positions[id];
+            var edgeClass = id === prevPoint ? "diagram-path-edge" : "diagram-edge";
             parts.push(
-                '<line x1="' + a.x + '" y1="' + a.y + '" x2="' + b.x + '" y2="' + b.y + '" class="diagram-edge"></line>'
+                '<line x1="' + centerX + '" y1="' + centerY + '" x2="' + b.x + '" y2="' + b.y +
+                    '" class="' + edgeClass + '"></line>'
             );
         });
 
-        for (var i = 0; i < path.length - 1; i++) {
-            var a = positions[path[i]];
-            var b = positions[path[i + 1]];
-            if (!a || !b) continue;
+        parts.push(
+            nodeMarkup(focus, positions[focus], true, {
+                isFixed: !!fixedSet[focus],
+                isPrevPathPoint: false,
+                isCandidate: false,
+                isSelected: false,
+            })
+        );
+        neighbors.forEach(function (id) {
             parts.push(
-                '<line x1="' + a.x + '" y1="' + a.y + '" x2="' + b.x + '" y2="' + b.y + '" class="diagram-path-edge"></line>'
+                nodeMarkup(id, positions[id], false, {
+                    isFixed: !!fixedSet[id],
+                    isPrevPathPoint: id === prevPoint,
+                    isCandidate: !!candidateSet[id],
+                    isSelected: id === selected,
+                })
             );
-        }
-
-        nodeIds.forEach(function (id) {
-            var pos = positions[id];
-            if (!pos) return;
-            var classes = ["diagram-node"];
-            if (pathIndex.hasOwnProperty(id)) classes.push("diagram-node-path");
-            if (candidateSet[id]) classes.push("diagram-node-candidate");
-
-            var safeId = escapeHtml(id);
-            if (fixedSet[id]) {
-                parts.push(
-                    '<rect x="' + (pos.x - 7) + '" y="' + (pos.y - 7) +
-                        '" width="14" height="14" class="' + classes.join(" ") +
-                        ' diagram-node-fixed" data-point="' + safeId + '"></rect>'
-                );
-            } else {
-                parts.push(
-                    '<circle cx="' + pos.x + '" cy="' + pos.y + '" r="7" class="' +
-                        classes.join(" ") + '" data-point="' + safeId + '"></circle>'
-                );
-            }
-            parts.push('<text x="' + pos.x + '" y="' + (pos.y - 12) + '" class="diagram-label">' + safeId + "</text>");
         });
 
         parts.push("</svg>");
+        if (overflow > 0) {
+            parts.push(
+                '<p class="help-text diagram-overflow-note">+' + overflow + " more connected point" +
+                    (overflow === 1 ? "" : "s") + " not shown.</p>"
+            );
+        }
+
         container.innerHTML = parts.join("");
 
         container.querySelectorAll(".diagram-node-candidate").forEach(function (el) {
@@ -203,17 +157,32 @@
                 var select = document.getElementById("next_point");
                 if (select) {
                     select.value = el.getAttribute("data-point");
+                    select.dispatchEvent(new Event("change"));
                 }
             });
         });
     }
 
-    function renderAllDiagrams() {
+    function initDiagram(container) {
+        function draw() {
+            var data = readData(container);
+            renderEgoView(container, buildAdjacency(data.edges), data);
+        }
+
+        var startSelect = document.getElementById("start_point");
+        if (startSelect) startSelect.addEventListener("change", draw);
+        var nextSelect = document.getElementById("next_point");
+        if (nextSelect) nextSelect.addEventListener("change", draw);
+
+        draw();
+    }
+
+    function initAllDiagrams() {
         document.querySelectorAll("#circuit-diagram-root").forEach(function (container) {
-            renderDiagram(container);
+            initDiagram(container);
         });
     }
 
-    document.addEventListener("DOMContentLoaded", renderAllDiagrams);
-    document.addEventListener("panels:updated", renderAllDiagrams);
+    document.addEventListener("DOMContentLoaded", initAllDiagrams);
+    document.addEventListener("panels:updated", initAllDiagrams);
 })();

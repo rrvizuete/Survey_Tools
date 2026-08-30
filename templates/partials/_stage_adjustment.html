@@ -318,7 +318,14 @@
                         data-path='{{ current_circuit_path|tojson|safe }}'
                         data-candidates='{{ current_circuit_candidates|tojson|safe }}'
                         data-fixed='{{ fixed_points_list|tojson|safe }}'
+                        data-focus='{{ circuit_focus_point|tojson|safe }}'
                     ></div>
+                    {% if isolated_points_list %}
+                    <p class="help-text u-mb-16">
+                        <strong>{{ isolated_points_list|length }} point{{ 's' if isolated_points_list|length != 1 else '' }} with no leg connections</strong>
+                        (not shown in diagram): {{ isolated_points_list|join(', ') }}
+                    </p>
+                    {% endif %}
 
                     <div class="circuit-builder-layout">
                         <div>

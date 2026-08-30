@@ -175,9 +175,10 @@ tbody tr:hover td { background: var(--blue-soft); }
 .anchor-circuit-table select, .anchor-circuit-table input[type="number"] { width: 100%; min-width: 160px; margin: 0; }
 .anchor-circuit-table button { width: 100%; min-width: 140px; }
 
-.circuit-diagram { margin-bottom: 16px; background: #fafbfc; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.circuit-diagram { margin-bottom: 16px; padding: 4px; background: #fafbfc; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .circuit-diagram:empty { display: none; }
-.circuit-diagram-svg { display: block; width: 100%; height: auto; max-height: 420px; }
+.circuit-diagram-svg { display: block; width: 100%; height: auto; max-height: 380px; margin: 0 auto; }
+.diagram-placeholder, .diagram-overflow-note { margin: 0; padding: 14px 16px; }
 .diagram-edge { stroke: var(--line-dark); stroke-width: 1.5; }
 .diagram-path-edge { stroke: var(--blue); stroke-width: 3; }
 .diagram-node { fill: #fff; stroke: var(--muted); stroke-width: 2; }
@@ -185,7 +186,14 @@ tbody tr:hover td { background: var(--blue-soft); }
 .diagram-node-fixed { fill: #fff; stroke: var(--navy-2); stroke-width: 2.5; }
 .diagram-node-candidate { stroke: var(--success); cursor: pointer; }
 .diagram-node-candidate:hover { fill: #e6f4ec; }
+.diagram-node-selected { stroke-width: 3.5; }
+.diagram-node-focus { fill: var(--blue); stroke: var(--navy-2); animation: diagram-focus-pulse 1.8s ease-in-out infinite; }
+.diagram-node-focus.diagram-node-fixed { fill: var(--navy-2); }
 .diagram-label { font-size: 11px; font-weight: 700; fill: var(--ink); text-anchor: middle; pointer-events: none; }
+@keyframes diagram-focus-pulse {
+    0%, 100% { filter: drop-shadow(0 0 0 rgba(36,109,165,.45)); }
+    50% { filter: drop-shadow(0 0 7px rgba(36,109,165,.45)); }
+}
 
 .circuit-builder-layout { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)) minmax(0,1.1fr); gap: 16px; }
 .circuit-builder-layout > * { min-width: 0; padding: 18px; background: #fafbfc; border: 1px solid var(--line); border-radius: 10px; }
@@ -220,4 +228,4 @@ hr { border: 0; border-top: 1px solid var(--line); }
     .form-group, form > button, .download-actions form, .download-actions button { width: 100%; flex-basis: 100%; }
     th, td { padding: 10px; }
 }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; animation: none !important; } }

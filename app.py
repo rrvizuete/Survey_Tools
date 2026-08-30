@@ -1406,9 +1406,11 @@ def index():
     )
 
     circuit_graph_edges = []
+    connected_points = set()
     if cleaned_data:
         display_graph, _usable = build_graph_from_cleaned_legs(pd.DataFrame(cleaned_data))
         circuit_graph_edges = graph_to_edge_list(display_graph)
+        connected_points = set(display_graph.keys())
     fixed_points_list = sorted(
         {
             str(row["PointID"])
@@ -1416,6 +1418,11 @@ def index():
             if str(row.get("Fixed", "")).upper() == "Y"
         }
     )
+    isolated_points_list = sorted(
+        {str(row["PointID"]) for row in (raw_data or [])} - connected_points,
+        key=natural_sort_key,
+    )
+    circuit_focus_point = current_circuit_path[-1] if current_circuit_path else ""
 
     context = dict(
         raw_data=raw_data,
@@ -1436,6 +1443,8 @@ def index():
         circuit_summary_stats=circuit_summary_stats,
         circuit_graph_edges=circuit_graph_edges,
         fixed_points_list=fixed_points_list,
+        isolated_points_list=isolated_points_list,
+        circuit_focus_point=circuit_focus_point,
         stage_progress=stage_progress,
         current_circuit_path=current_circuit_path,
         current_circuit_candidates=current_circuit_candidates,
