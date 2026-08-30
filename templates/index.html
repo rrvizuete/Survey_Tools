@@ -4,16 +4,27 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Leveling Adjustment App</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
     <script src="{{ url_for('static', filename='table-tools.js') }}" defer></script>
     <script src="{{ url_for('static', filename='circuit-diagram.js') }}" defer></script>
 </head>
 <body>
     <div class="container">
-        <header class="page-header">
-            <p class="eyebrow">Survey computation workspace</p>
-            <h1>Leveling Adjustment</h1>
-            <p>Version 1.4 — Circuit Builder (Phase 3)</p>
+        <header class="page-header flex flex-wrap items-start justify-between gap-4">
+            <div class="flex items-start gap-3">
+                <span class="app-mark" aria-hidden="true">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16M6 19V9l4-4 4 4v10M14 19v-6l4-4v10"/></svg>
+                </span>
+                <div>
+                    <p class="eyebrow">Survey computation workspace</p>
+                    <h1>Leveling Adjustment</h1>
+                    <p>Professional field review, blunder detection, and adjustment workspace.</p>
+                </div>
+            </div>
+            <span class="version-pill">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg>
+                Version 1.4 — Circuit Builder
+            </span>
         </header>
 
         <section class="card upload-card">
@@ -22,9 +33,12 @@
                     <h2>Start an analysis</h2>
                     <p>Upload a prepared workbook to begin. You can choose the adjustment method afterward.</p>
                 </div>
-                <button class="button-secondary" type="button" onclick="openHelpModal()">Input guide</button>
+                <button class="button-secondary" type="button" onclick="openHelpModal()">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 4.9.8c0 1.7-2.4 2-2.4 3.7"/><path d="M12 17.2h.01"/></svg>
+                    Input guide
+                </button>
             </div>
-            <form method="POST" enctype="multipart/form-data">
+            <form method="POST" enctype="multipart/form-data" id="upload-form">
                 <input type="hidden" name="action" value="process">
                 <input type="hidden" name="active_stage" class="active-stage-input" value="{{ active_stage }}">
                 <input type="hidden" name="active_tab" class="active-tab-input" value="{{ active_tab }}">
@@ -32,7 +46,18 @@
 
                 <div class="form-group">
                     <label for="excel_file">Upload Excel File</label>
-                    <input id="excel_file" type="file" name="excel_file" accept=".xlsx,.xls" required>
+                    <div class="dropzone" id="dropzone">
+                        <span class="dropzone-icon" aria-hidden="true">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+                        </span>
+                        <span class="dropzone-title" id="dropzone-title">Drag &amp; drop your workbook here</span>
+                        <span class="dropzone-hint">or click to browse · .xlsx / .xls</span>
+                        <span class="file-chip u-hidden" id="file-chip">
+                            <span class="file-chip-name" id="file-chip-name"></span>
+                            <span class="file-chip-remove" id="file-chip-remove" title="Remove file">✕</span>
+                        </span>
+                        <input id="excel_file" type="file" name="excel_file" accept=".xlsx,.xls" required>
+                    </div>
                 </div>
 
                 <div class="form-group">
@@ -47,7 +72,7 @@
                     >
                 </div>
 
-                <button type="submit">Upload and Process</button>
+                <button type="submit" id="upload-submit">Upload and Process</button>
             </form>
 
             <div class="download-actions">
@@ -63,9 +88,35 @@
             </div>
         </section>
 
-        <div id="help-modal" class="modal-overlay">
+        {% if not (raw_data or leg_data or summary_data or decision_data or cleaned_data) %}
+        <section class="card">
+            <h2>How it works</h2>
+            <div class="guide-grid">
+                <div class="guide-step">
+                    <span class="guide-step-index">1</span>
+                    <span class="guide-step-title">Upload &amp; detect blunders</span>
+                    <span class="guide-step-text">Upload your field observations workbook. Repeated legs are compared automatically to flag suspect readings.</span>
+                </div>
+                <div class="guide-step">
+                    <span class="guide-step-index">2</span>
+                    <span class="guide-step-title">Review &amp; clean</span>
+                    <span class="guide-step-text">Accept, review, or exclude flagged observations before the leg means are finalized.</span>
+                </div>
+                <div class="guide-step">
+                    <span class="guide-step-index">3</span>
+                    <span class="guide-step-title">Adjust &amp; export</span>
+                    <span class="guide-step-text">Run a network least-squares or circuit closure adjustment, then export the full analysis to Excel.</span>
+                </div>
+            </div>
+        </section>
+        {% endif %}
+
+        <div id="help-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="help-modal-title">
             <div class="modal-card">
-                <h3>Input Templates & Least Squares Method</h3>
+                <div class="flex items-start justify-between gap-4 mb-1">
+                    <h3 id="help-modal-title">Input Templates & Least Squares Method</h3>
+                    <button type="button" class="button-secondary !min-h-8 !min-w-8 !p-0 shrink-0" onclick="closeHelpModal()" aria-label="Close">✕</button>
+                </div>
                 <p><strong>Field_Elevations sheet columns:</strong> <code>RunID</code>, <code>Sequence</code>, <code>PointID</code>, <code>Raw_Elevation</code>.</p>
                 <ul>
                     <li><strong>RunID:</strong> groups readings from the same leveling run.</li>
@@ -80,7 +131,7 @@
                 <p class="help-text">For each leg observation from point <em>i</em> to point <em>j</em>, the observation equation is built as:<br><code>Hj - Hi = ΔZobs + v</code><br>where <code>Hi</code>/<code>Hj</code> are unknown adjusted elevations (or known control if fixed), <code>ΔZobs</code> is the cleaned observed delta-Z, and <code>v</code> is the residual.</p>
                 <p class="help-text">All equations are assembled in matrix form <code>A·x - l = v</code>, with diagonal weights from observation precision (<code>w = 1/σ²</code> when σ is available, otherwise 1.0). The solver computes <code>x</code> using normal equations:<br><code>(AᵀPA)x = AᵀPl</code>.</p>
                 <p class="help-text">Residuals are then <code>v = A·x - l</code>, and the solution is the one that minimizes the weighted sum of squared residuals:<br><code>vᵀPv</code>. This gives statistically consistent adjustments while honoring fixed control constraints.</p>
-                <button type="button" onclick="closeHelpModal()">Close</button>
+                <button type="button" class="button-secondary" onclick="closeHelpModal()">Close</button>
             </div>
         </div>
 
@@ -88,16 +139,18 @@
 
         {% if raw_data or leg_data or summary_data or decision_data or cleaned_data %}
         <section class="card">
+            {% set stage_order = {'review': 2, 'cleaned': 3, 'adjustment': 4} %}
+            {% set current_order = stage_order.get(active_stage, 1) %}
             <div class="stage-tabs">
-                <div class="step">
+                <div class="step step-complete">
                     <span class="step-index">1</span>
                     <span class="step-label">Upload</span>
                 </div>
-                <button type="button" class="step {% if active_stage == 'review' %}active{% endif %}" onclick="showStage('review')">
+                <button type="button" class="step {% if active_stage == 'review' %}active{% elif current_order > 2 %}step-complete{% endif %}" onclick="showStage('review')">
                     <span class="step-index">2</span>
                     <span class="step-label">Blunder Detection</span>
                 </button>
-                <button type="button" class="step {% if active_stage == 'cleaned' %}active{% endif %}" onclick="showStage('cleaned')">
+                <button type="button" class="step {% if active_stage == 'cleaned' %}active{% elif current_order > 3 %}step-complete{% endif %}" onclick="showStage('cleaned')">
                     <span class="step-index">3</span>
                     <span class="step-label">Cleaned Leg Means</span>
                 </button>
@@ -135,6 +188,11 @@
             </form>
         </section>
         {% endif %}
+
+        <footer class="site-footer">
+            <span>Leveling Adjustment · least-squares &amp; circuit closure workspace</span>
+            <a href="#" onclick="openHelpModal(); return false;">Input guide &amp; method reference</a>
+        </footer>
     </div>
 
     <script>
@@ -220,6 +278,90 @@
             document.getElementById('help-modal').classList.remove('open');
         }
 
+        function initHelpModal() {
+            const overlay = document.getElementById('help-modal');
+            if (!overlay) return;
+            overlay.addEventListener('click', (event) => {
+                if (event.target === overlay) closeHelpModal();
+            });
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape' && overlay.classList.contains('open')) closeHelpModal();
+            });
+        }
+
+        function initDropzone() {
+            const dropzone = document.getElementById('dropzone');
+            const input = document.getElementById('excel_file');
+            const title = document.getElementById('dropzone-title');
+            const chip = document.getElementById('file-chip');
+            const chipName = document.getElementById('file-chip-name');
+            const chipRemove = document.getElementById('file-chip-remove');
+            if (!dropzone || !input) return;
+
+            function formatSize(bytes) {
+                if (bytes < 1024) return bytes + ' B';
+                if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+                return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+            }
+
+            function showFile(file) {
+                if (!file) {
+                    dropzone.classList.remove('has-file');
+                    chip.classList.add('u-hidden');
+                    title.textContent = 'Drag & drop your workbook here';
+                    return;
+                }
+                dropzone.classList.add('has-file');
+                title.textContent = 'Ready to upload';
+                chipName.textContent = file.name + ' · ' + formatSize(file.size);
+                chip.classList.remove('u-hidden');
+            }
+
+            input.addEventListener('change', () => showFile(input.files && input.files[0]));
+
+            chipRemove.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                input.value = '';
+                showFile(null);
+            });
+
+            ['dragenter', 'dragover'].forEach((eventName) => {
+                dropzone.addEventListener(eventName, (event) => {
+                    event.preventDefault();
+                    dropzone.classList.add('is-dragover');
+                });
+            });
+
+            ['dragleave', 'dragend'].forEach((eventName) => {
+                dropzone.addEventListener(eventName, (event) => {
+                    event.preventDefault();
+                    dropzone.classList.remove('is-dragover');
+                });
+            });
+
+            dropzone.addEventListener('drop', (event) => {
+                event.preventDefault();
+                dropzone.classList.remove('is-dragover');
+                const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+                if (file) {
+                    input.files = event.dataTransfer.files;
+                    showFile(file);
+                }
+            });
+        }
+
+        function initUploadLoadingState() {
+            const form = document.getElementById('upload-form');
+            const button = document.getElementById('upload-submit');
+            if (!form || !button) return;
+            form.addEventListener('submit', () => {
+                button.dataset.loading = 'true';
+                button.disabled = true;
+                button.innerHTML = '<span class="btn-spinner" aria-hidden="true"></span> Processing…';
+            });
+        }
+
         function submitFormCompat(form) {
             if (form.requestSubmit) {
                 form.requestSubmit();
@@ -287,6 +429,9 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             bindDynamicHandlers();
+            initHelpModal();
+            initDropzone();
+            initUploadLoadingState();
         });
     </script>
 </body>

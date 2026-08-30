@@ -1,30 +1,51 @@
 <div id="flash-messages">
     {% if errors %}
     <section class="card error-card">
-        <h2>Errors</h2>
-        <ul>
-            {% for error in errors %}
-            <li>{{ error }}</li>
-            {% endfor %}
-        </ul>
+        <div class="alert">
+            <span class="alert-icon" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 2.5 17.5A1.8 1.8 0 0 0 4 20.2h16a1.8 1.8 0 0 0 1.5-2.7L13.7 3.9a1.8 1.8 0 0 0-3.4 0Z"/></svg>
+            </span>
+            <div>
+                <h2>Errors</h2>
+                <ul>
+                    {% for error in errors %}
+                    <li>{{ error }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
     </section>
     {% endif %}
 
     {% if warnings %}
     <section class="card warning-card">
-        <h2>Warnings</h2>
-        <ul>
-            {% for warning in warnings %}
-            <li>{{ warning }}</li>
-            {% endfor %}
-        </ul>
+        <div class="alert">
+            <span class="alert-icon" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 2.5 17.5A1.8 1.8 0 0 0 4 20.2h16a1.8 1.8 0 0 0 1.5-2.7L13.7 3.9a1.8 1.8 0 0 0-3.4 0Z"/></svg>
+            </span>
+            <div>
+                <h2>Warnings</h2>
+                <ul>
+                    {% for warning in warnings %}
+                    <li>{{ warning }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
     </section>
     {% endif %}
 
     {% if success_message %}
     <section class="card success-card">
-        <p>{{ success_message }}</p>
-        <p><strong>Tolerance used:</strong> {{ "%.4f"|format(tolerance) }} ft</p>
+        <div class="alert">
+            <span class="alert-icon" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            </span>
+            <div>
+                <p>{{ success_message }}</p>
+                <p><strong>Tolerance used:</strong> {{ "%.4f"|format(tolerance) }} ft</p>
+            </div>
+        </div>
     </section>
     {% endif %}
 </div>
