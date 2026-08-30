@@ -20,7 +20,7 @@
             <div class="section-heading">
                 <div>
                     <h2>Start an analysis</h2>
-                    <p>Upload a prepared workbook and select the adjustment method.</p>
+                    <p>Upload a prepared workbook to begin. You can choose the adjustment method afterward.</p>
                 </div>
                 <button class="button-secondary" type="button" onclick="openHelpModal()">Input guide</button>
             </div>
@@ -45,14 +45,6 @@
                         value="{{ tolerance }}"
                         required
                     >
-                </div>
-
-                <div class="form-group">
-                    <label for="adjustment_mode">Adjustment Mode</label>
-                    <select id="adjustment_mode" name="adjustment_mode">
-                        <option value="network" {% if adjustment_mode == 'network' %}selected{% endif %}>Network Least Squares</option>
-                        <option value="circuit" {% if adjustment_mode == 'circuit' %}selected{% endif %}>Circuit Closure / Proration</option>
-                    </select>
                 </div>
 
                 <button type="submit">Upload and Process</button>
