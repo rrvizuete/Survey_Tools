@@ -75,7 +75,10 @@
 
 @layer components {
     /* ---------- Layout shell ---------- */
-    .container {
+    /* Named .app-shell, not .container, to avoid collision with Tailwind's
+       built-in `container` utility (emitted in the utilities layer, which
+       always wins over @layer components regardless of source order). */
+    .app-shell {
         width: min(1480px, calc(100% - 48px));
         margin: auto;
         padding: 42px 0 64px;
@@ -299,7 +302,10 @@
     }
 
     .file-chip {
-        @apply inline-flex max-w-full items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold;
+        /* Positioned above the dropzone's absolutely-positioned file input
+           (z-index:auto) so the remove control is actually clickable
+           instead of being covered by the invisible input overlay. */
+        @apply relative z-10 inline-flex max-w-full items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold;
         border-color: var(--color-line-dark);
         background: #fff;
         color: var(--color-navy-2);
@@ -1106,7 +1112,7 @@
     }
 
     @media (max-width: 720px) {
-        .container {
+        .app-shell {
             width: calc(100% - 24px);
             padding: 28px 0 40px;
         }
