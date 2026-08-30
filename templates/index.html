@@ -89,19 +89,19 @@
         {% if raw_data or leg_data or summary_data or decision_data or cleaned_data %}
         <section class="card">
             <div class="stage-tabs">
-                <div class="step step-pass">
+                <div class="step">
                     <span class="step-index">1</span>
                     <span class="step-label">Upload</span>
                 </div>
-                <button type="button" class="step {% if active_stage == 'review' %}active{% endif %}{% if stage_progress.review %} step-{{ stage_progress.review }}{% endif %}" onclick="showStage('review')">
+                <button type="button" class="step {% if active_stage == 'review' %}active{% endif %}" onclick="showStage('review')">
                     <span class="step-index">2</span>
                     <span class="step-label">Blunder Detection</span>
                 </button>
-                <button type="button" class="step {% if active_stage == 'cleaned' %}active{% endif %}{% if stage_progress.cleaned %} step-{{ stage_progress.cleaned }}{% endif %}" onclick="showStage('cleaned')">
+                <button type="button" class="step {% if active_stage == 'cleaned' %}active{% endif %}" onclick="showStage('cleaned')">
                     <span class="step-index">3</span>
                     <span class="step-label">Cleaned Leg Means</span>
                 </button>
-                <button type="button" class="step {% if active_stage == 'adjustment' %}active{% endif %}{% if stage_progress.adjustment %} step-{{ stage_progress.adjustment }}{% endif %}" onclick="showStage('adjustment')">
+                <button type="button" class="step {% if active_stage == 'adjustment' %}active{% endif %}" onclick="showStage('adjustment')">
                     <span class="step-index">4</span>
                     <span class="step-label">Adjustment</span>
                 </button>

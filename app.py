@@ -253,24 +253,6 @@ def build_unassigned_points(
     }
 
 
-def build_stage_progress(decision_data, cleaned_data, network_summary, circuit_summary_stats, adjustment_mode):
-    review_status = None
-    if decision_data:
-        unresolved = {"Suspect", "Pending Review", "Single Observation"}
-        review_status = "warn" if any(row.get("Decision") in unresolved for row in decision_data) else "pass"
-
-    cleaned_status = None
-    if cleaned_data:
-        cleaned_status = "pass" if all(row.get("Status") == "Ready" for row in cleaned_data) else "warn"
-
-    adjustment_summary = network_summary if adjustment_mode == "network" else circuit_summary_stats
-    adjustment_status = None
-    if adjustment_summary:
-        adjustment_status = "pass" if adjustment_summary["overall_status"] == "Pass" else "warn"
-
-    return {"review": review_status, "cleaned": cleaned_status, "adjustment": adjustment_status}
-
-
 def build_template_workbook(sheet_name: str, columns: list[str], filename: str):
     output = BytesIO()
     df = pd.DataFrame(columns=columns)
@@ -1401,9 +1383,6 @@ def index():
 
     network_summary = build_network_adjustment_summary(connectivity_data, observation_residuals_data)
     circuit_summary_stats = build_circuit_adjustment_summary(circuit_summary_data)
-    stage_progress = build_stage_progress(
-        decision_data, cleaned_data, network_summary, circuit_summary_stats, adjustment_mode
-    )
 
     circuit_graph_edges = []
     connected_points = set()
@@ -1445,7 +1424,6 @@ def index():
         fixed_points_list=fixed_points_list,
         isolated_points_list=isolated_points_list,
         circuit_focus_point=circuit_focus_point,
-        stage_progress=stage_progress,
         current_circuit_path=current_circuit_path,
         current_circuit_candidates=current_circuit_candidates,
         available_start_points=available_start_points,
