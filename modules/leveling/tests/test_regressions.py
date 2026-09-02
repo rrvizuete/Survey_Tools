@@ -3,10 +3,11 @@ import unittest
 
 import pandas as pd
 
-from app import app, normalize_saved_circuits, parse_circuit_path
-from core.circuit_detection import find_fixed_to_fixed_paths
-from core.control_points import apply_anchor_elevation, validate_control_points
-from core.leg_computation import validate_field_data
+from app import app
+from modules.leveling.routes import normalize_saved_circuits, parse_circuit_path
+from modules.leveling.core.circuit_detection import find_fixed_to_fixed_paths
+from modules.leveling.core.control_points import apply_anchor_elevation, validate_control_points
+from modules.leveling.core.leg_computation import validate_field_data
 
 
 class ValidationRegressionTests(unittest.TestCase):
@@ -80,7 +81,7 @@ class CircuitStateRegressionTests(unittest.TestCase):
     def test_malformed_post_state_is_reported_instead_of_raising(self):
         app.config.update(TESTING=True)
         response = app.test_client().post(
-            "/",
+            "/leveling/",
             data={
                 "action": "process",
                 "saved_circuits_json": "not-json",
@@ -94,7 +95,7 @@ class CircuitStateRegressionTests(unittest.TestCase):
     def test_circuit_json_is_html_attribute_escaped(self):
         app.config.update(TESTING=True)
         response = app.test_client().post(
-            "/",
+            "/leveling/",
             data={
                 "action": "process",
                 "saved_circuits_json": '[{"Circuit_ID":"CIR-1","Path":["A\' autofocus onfocus=alert(1) x=\'"]}]',

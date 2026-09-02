@@ -1,5 +1,5 @@
 import pandas as pd
-from core.circuit_builder import build_circuit_legs_df
+from .circuit_builder import build_circuit_legs_df
 
 
 def classify_circuit_from_points(point_ids: list[str], fixed_points: set[str]) -> str:

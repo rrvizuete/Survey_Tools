@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}Survey Toolbox{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
+    {% block head_extra %}{% endblock %}
+</head>
+<body>
+    <div class="app-shell">
+        <nav class="toolbox-bar">
+            <a href="{{ url_for('toolbox.home') }}" class="toolbox-brand">
+                <span class="toolbox-mark" aria-hidden="true">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-8-8 18-2-8-8-2Z"/></svg>
+                </span>
+                Survey Toolbox
+            </a>
+            {% block toolbox_nav_extra %}{% endblock %}
+        </nav>
+
+        {% block content %}{% endblock %}
+
+        <footer class="site-footer">
+            <span>Survey Toolbox · {% block footer_tagline %}engineering workspace{% endblock %}</span>
+            {% block footer_extra %}{% endblock %}
+        </footer>
+    </div>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

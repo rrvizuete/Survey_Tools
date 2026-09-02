@@ -1,15 +1,17 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Leveling Adjustment App</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
-    <script src="{{ url_for('static', filename='table-tools.js') }}" defer></script>
-    <script src="{{ url_for('static', filename='circuit-diagram.js') }}" defer></script>
-</head>
-<body>
-    <div class="app-shell">
+{% extends "base.html" %}
+
+{% block title %}Leveling Adjustment · Survey Toolbox{% endblock %}
+
+{% block head_extra %}
+    <script src="{{ url_for('leveling.static', filename='table-tools.js') }}" defer></script>
+    <script src="{{ url_for('leveling.static', filename='circuit-diagram.js') }}" defer></script>
+{% endblock %}
+
+{% block toolbox_nav_extra %}
+    <span class="toolbox-current">Leveling Adjustment</span>
+{% endblock %}
+
+{% block content %}
         <header class="page-header flex flex-wrap items-start justify-between gap-4">
             <div class="flex items-start gap-3">
                 <span class="app-mark" aria-hidden="true">
@@ -135,7 +137,7 @@
             </div>
         </div>
 
-        {% include "partials/_flash_messages.html" %}
+        {% include "leveling/partials/_flash_messages.html" %}
 
         {% if raw_data or leg_data or summary_data or decision_data or cleaned_data %}
         <section class="card">
@@ -160,11 +162,11 @@
                 </button>
             </div>
 
-            {% include "partials/_stage_review.html" %}
+            {% include "leveling/partials/_stage_review.html" %}
 
-            {% include "partials/_stage_cleaned.html" %}
+            {% include "leveling/partials/_stage_cleaned.html" %}
 
-            {% include "partials/_stage_adjustment.html" %}
+            {% include "leveling/partials/_stage_adjustment.html" %}
 
             <form method="POST" class="export-form">
                 <input type="hidden" name="action" value="export_excel">
@@ -188,13 +190,14 @@
             </form>
         </section>
         {% endif %}
+{% endblock %}
 
-        <footer class="site-footer">
-            <span>Leveling Adjustment · least-squares &amp; circuit closure workspace</span>
-            <a href="#" onclick="openHelpModal(); return false;">Input guide &amp; method reference</a>
-        </footer>
-    </div>
+{% block footer_tagline %}least-squares &amp; circuit closure workspace{% endblock %}
+{% block footer_extra %}
+        <a href="#" onclick="openHelpModal(); return false;">Input guide &amp; method reference</a>
+{% endblock %}
 
+{% block scripts %}
     <script>
         function showStage(stageName) {
             document.querySelectorAll('.stage-panel').forEach(panel => {
@@ -434,5 +437,4 @@
             initUploadLoadingState();
         });
     </script>
-</body>
-</html>
+{% endblock %}

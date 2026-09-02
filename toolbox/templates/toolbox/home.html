@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}Survey Toolbox{% endblock %}
+
+{% block content %}
+        <header class="page-header">
+            <p class="eyebrow">Engineering workspace</p>
+            <h1>Survey Toolbox</h1>
+            <p>A growing set of survey and structural computation tools, sharing one workspace.</p>
+        </header>
+
+        <section class="card">
+            <h2>Tools</h2>
+            <div class="tool-grid">
+                {% for tool in tools %}
+                {% if tool.status == "available" %}
+                <a class="tool-card" href="{{ tool.url }}">
+                    <span class="tool-card-title">{{ tool.name }}</span>
+                    <span class="tool-card-desc">{{ tool.description }}</span>
+                    <span class="tool-card-cta">Open tool →</span>
+                </a>
+                {% else %}
+                <div class="tool-card tool-card-disabled">
+                    <span class="tool-card-title">
+                        {{ tool.name }}
+                        <span class="badge badge-neutral">Coming soon</span>
+                    </span>
+                    <span class="tool-card-desc">{{ tool.description }}</span>
+                </div>
+                {% endif %}
+                {% endfor %}
+            </div>
+        </section>
+{% endblock %}

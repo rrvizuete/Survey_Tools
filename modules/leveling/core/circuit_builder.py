@@ -1,5 +1,5 @@
 import pandas as pd
-from core.network_adjustment import natural_sort_key, build_graph
+from .network_adjustment import natural_sort_key, build_graph
 
 
 def build_graph_from_cleaned_legs(cleaned_df: pd.DataFrame):
