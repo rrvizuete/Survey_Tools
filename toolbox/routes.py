@@ -12,8 +12,8 @@ TOOLS = [
     {
         "name": "Bridge Superstructure",
         "description": "Girder/top-of-deck deflection profiles and plan-view geometry.",
-        "endpoint": None,
-        "status": "coming_soon",
+        "endpoint": "bridge.index",
+        "status": "available",
     },
 ]
 

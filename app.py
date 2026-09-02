@@ -4,6 +4,7 @@ from flask import Flask
 
 from toolbox import toolbox_bp
 from modules.leveling import leveling_bp
+from modules.bridge import bridge_bp
 
 
 def create_app() -> Flask:
@@ -12,6 +13,7 @@ def create_app() -> Flask:
 
     app.register_blueprint(toolbox_bp)
     app.register_blueprint(leveling_bp, url_prefix="/leveling")
+    app.register_blueprint(bridge_bp, url_prefix="/bridge")
 
     return app
 
