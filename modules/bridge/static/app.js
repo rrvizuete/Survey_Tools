@@ -901,9 +901,9 @@ function renderDeflectedDeckChart() {
         zsmooth: "best",
         hoverongaps: false,
         showscale: true,
-        colorbar: { title: { text: "Isopach (ft)" }, thickness: 12, tickformat: ".3f" },
-        name: "Isopach",
-        hovertemplate: "E %{x:.3f}<br>N %{y:.3f}<br>Isopach %{z:.3f} ft<extra></extra>",
+        colorbar: { title: { text: "Deflection (ft)" }, thickness: 12, tickformat: ".3f" },
+        name: "Deflection",
+        hovertemplate: "N %{y:.3f}<br>E %{x:.3f}<br>Deflection %{z:.3f} ft<extra></extra>",
       });
     }
   }
@@ -940,9 +940,11 @@ function renderDeflectedDeckChart() {
 
   const deck = state.deflectedDeck;
   if (deck) {
+    // Plotly's hovertemplate parser does not accept the "+" sign flag, and
+    // silently falls back to full precision when it sees one.
     const hover =
       "N %{y:.3f}<br>E %{x:.3f}<br>DTM %{customdata[0]:.3f} ft<br>" +
-      "Isopach %{customdata[1]:+.3f} ft<br><b>Deflected %{customdata[2]:.3f} ft</b><extra></extra>";
+      "Deflection %{customdata[1]:.3f} ft<br><b>Deflected %{customdata[2]:.3f} ft</b><extra></extra>";
     const toCustomdata = (point) => [point.originalZ, point.isopach, point.deflectedZ];
 
     traces.push({
@@ -964,7 +966,12 @@ function renderDeflectedDeckChart() {
         y: selectedPoints.map((point) => point.n),
         mode: "markers+text",
         marker: { size: 9, color: "#d63384", line: { width: 1, color: "#fff" } },
-        text: selectedPoints.map((point) => point.deflectedZ.toFixed(3)),
+        // Label with the point code used in the export, so a point on the plan
+        // can be matched to its exported row.
+        text: selectedPoints.map(
+          (point) =>
+            `${formatSpan(selectedSpan)}${formatGirder(selectedGirder)}${formatInterval(point.interval)}`,
+        ),
         textposition: "top center",
         textfont: { size: 10, color: "#212529" },
         name: `Span ${selectedSpan} - Girder ${selectedGirder}`,
