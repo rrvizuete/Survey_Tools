@@ -203,6 +203,69 @@
     return [w1, w2, w3];
   }
 
+  /** Grid-indexed point location shared by the isopach mesh and the DTM TIN. */
+  function makeSampler(triangles) {
+    const index = buildGridIndex(triangles);
+
+    return function sampleTriangle(e, n) {
+      if (!index) return null;
+      if (e < index.minX || e > index.maxX || n < index.minY || n > index.maxY) return null;
+
+      const bucket = index.buckets[index.rowOf(n) * index.cols + index.colOf(e)];
+      if (!bucket) return null;
+
+      for (let i = 0; i < bucket.length; i += 1) {
+        const triangle = triangles[bucket[i]];
+        if (e < triangle.minX || e > triangle.maxX || n < triangle.minY || n > triangle.maxY) continue;
+
+        const weights = barycentric(e, n, triangle);
+        if (!weights) continue;
+
+        return {
+          triangle,
+          weights,
+          value: weights[0] * triangle.v1 + weights[1] * triangle.v2 + weights[2] * triangle.v3,
+        };
+      }
+
+      return null;
+    };
+  }
+
+  /**
+   * Interpolates elevations over an existing TIN (the LandXML surface faces),
+   * so deck elevations can be read at arbitrary plan positions such as girder
+   * centerlines rather than only at the surface's own vertices.
+   */
+  function buildTinInterpolator(points, faces) {
+    const triangles = [];
+
+    (faces || []).forEach((face) => {
+      const a = points[face[0]];
+      const b = points[face[1]];
+      const c = points[face[2]];
+      if (!a || !b || !c) return;
+
+      triangles.push({
+        x1: a.e, y1: a.n, v1: a.z,
+        x2: b.e, y2: b.n, v2: b.z,
+        x3: c.e, y3: c.n, v3: c.z,
+        minX: Math.min(a.e, b.e, c.e), maxX: Math.max(a.e, b.e, c.e),
+        minY: Math.min(a.n, b.n, c.n), maxY: Math.max(a.n, b.n, c.n),
+      });
+    });
+
+    const sampleTriangle = makeSampler(triangles);
+
+    return {
+      triangleCount: triangles.length,
+      sample(e, n) {
+        const hit = sampleTriangle(e, n);
+        return hit ? hit.value : null;
+      },
+    };
+  }
+
   function nearestGirder(triangle, weights) {
     const totals = new Map();
     const add = (label, weight) => {
@@ -267,30 +330,17 @@
       spans.push({ span: spanLabel, girders: girders.length, triangles: triangles.length - before });
     });
 
-    const index = buildGridIndex(triangles);
+    const sampleTriangle = makeSampler(triangles);
 
     function sample(e, n) {
-      if (!index) return null;
-      if (e < index.minX || e > index.maxX || n < index.minY || n > index.maxY) return null;
+      const hit = sampleTriangle(e, n);
+      if (!hit) return null;
 
-      const bucket = index.buckets[index.rowOf(n) * index.cols + index.colOf(e)];
-      if (!bucket) return null;
-
-      for (let i = 0; i < bucket.length; i += 1) {
-        const triangle = triangles[bucket[i]];
-        if (e < triangle.minX || e > triangle.maxX || n < triangle.minY || n > triangle.maxY) continue;
-
-        const weights = barycentric(e, n, triangle);
-        if (!weights) continue;
-
-        return {
-          value: weights[0] * triangle.v1 + weights[1] * triangle.v2 + weights[2] * triangle.v3,
-          spanKey: triangle.span,
-          girderKey: nearestGirder(triangle, weights),
-        };
-      }
-
-      return null;
+      return {
+        value: hit.value,
+        spanKey: hit.triangle.span,
+        girderKey: nearestGirder(hit.triangle, hit.weights),
+      };
     }
 
     return {
@@ -299,9 +349,6 @@
       triangleCount: triangles.length,
       spans,
       warnings,
-      bounds: index
-        ? { minE: index.minX, maxE: index.maxX, minN: index.minY, maxN: index.maxY }
-        : null,
     };
   }
 
@@ -343,5 +390,5 @@
     return lower.concat(upper);
   }
 
-  global.BridgeIsopach = { buildIsopachMesh, convexHull };
+  global.BridgeIsopach = { buildIsopachMesh, buildTinInterpolator, convexHull };
 })(typeof window !== "undefined" ? window : globalThis);

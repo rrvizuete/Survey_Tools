@@ -775,13 +775,58 @@ function computeDeflectedDeck() {
 
   const inside = points.reduce((total, point) => total + (point.spanKey === null ? 0 : 1), 0);
 
+  // A deck DTM is often built from a few longitudinal feature lines (edges and
+  // PGL), so it may have no vertex anywhere near an interior girder. Sample the
+  // deflected surface along every girder centerline instead, so each girder has
+  // elevations to report regardless of where the DTM happens to place vertices.
+  const tin = BridgeIsopach.buildTinInterpolator(state.dtm.points, state.dtm.faces);
+  const girderPoints = {};
+  let sampledGirders = 0;
+
+  sortedSpans().forEach((span) => {
+    sortedGirders(span).forEach((girder) => {
+      const key = `${span}||${girder}`;
+      const centerline = state.girderGeometry[key]?.planCenterline;
+      if (!centerline?.length) return;
+
+      const sampled = [];
+      centerline.forEach((point, interval) => {
+        const deckZ = tin.sample(point.e, point.n);
+        if (deckZ === null) return;
+        const hit = mesh.sample(point.e, point.n);
+        const isopach = hit ? hit.value : 0;
+        sampled.push({
+          e: point.e,
+          n: point.n,
+          interval,
+          originalZ: deckZ,
+          isopach,
+          deflectedZ: deckZ + isopach,
+        });
+      });
+
+      if (sampled.length) {
+        girderPoints[key] = sampled;
+        sampledGirders += 1;
+      }
+    });
+  });
+
   state.isopachMesh = mesh;
-  state.deflectedDeck = { points, inside };
+  state.deflectedDeck = { points, inside, girderPoints };
 
   logLine(
     `Deflected deck: ${points.length} DTM points - ${inside} inside the isopach surface, ` +
       `${points.length - inside} outside (isopach held at 0, original elevation kept).`,
   );
+  if (tin.triangleCount) {
+    logLine(`Deflected deck: sampled deck elevations along ${sampledGirders} girder centerlines for the plan view.`);
+  } else {
+    logLine(
+      "Deflected deck NOTE: the DTM has no TIN faces, so deck elevations could not be sampled along the " +
+        "girder centerlines. Only the surface's own points are shown.",
+    );
+  }
   logDeckReferenceStats();
 
   renderDeflectedDeckChart();
@@ -827,46 +872,43 @@ function renderDeflectedDeckChart() {
 
   const deck = state.deflectedDeck;
   if (deck) {
-    const isSelectedPoint = (point) =>
-      selectedSpan && point.spanKey === selectedSpan && point.girderKey === selectedGirder;
-    const others = deck.points.filter((point) => !isSelectedPoint(point));
-    const selected = deck.points.filter(isSelectedPoint);
     const hover =
       "N %{y:.3f}<br>E %{x:.3f}<br>DTM %{customdata[0]:.3f} ft<br>" +
       "Isopach %{customdata[1]:+.3f} ft<br><b>Deflected %{customdata[2]:.3f} ft</b><extra></extra>";
     const toCustomdata = (point) => [point.originalZ, point.isopach, point.deflectedZ];
 
-    if (others.length) {
-      traces.push({
-        type: "scattergl",
-        x: others.map((point) => point.e),
-        y: others.map((point) => point.n),
-        mode: "markers",
-        marker: {
-          size: 5,
-          color: others.map((point) => point.isopach),
-          colorscale: "YlOrRd",
-          showscale: true,
-          colorbar: { title: { text: "Isopach (ft)" }, thickness: 12 },
-        },
-        name: "Deflected deck points",
-        customdata: others.map(toCustomdata),
-        hovertemplate: hover,
-      });
-    }
+    traces.push({
+      type: "scattergl",
+      x: deck.points.map((point) => point.e),
+      y: deck.points.map((point) => point.n),
+      mode: "markers",
+      marker: {
+        size: 5,
+        color: deck.points.map((point) => point.isopach),
+        colorscale: "YlOrRd",
+        showscale: true,
+        colorbar: { title: { text: "Isopach (ft)" }, thickness: 12 },
+      },
+      name: "Deflected deck points",
+      customdata: deck.points.map(toCustomdata),
+      hovertemplate: hover,
+    });
 
-    if (selected.length) {
+    // Deck elevations sampled along the selected girder, labelled in place.
+    const selectedPoints = deck.girderPoints?.[`${selectedSpan}||${selectedGirder}`] ?? [];
+    if (selectedPoints.length) {
       traces.push({
-        x: selected.map((point) => point.e),
-        y: selected.map((point) => point.n),
+        x: selectedPoints.map((point) => point.e),
+        y: selectedPoints.map((point) => point.n),
         mode: "markers+text",
         marker: { size: 9, color: "#d63384", line: { width: 1, color: "#fff" } },
-        text: selected.map((point) => point.deflectedZ.toFixed(3)),
+        text: selectedPoints.map((point) => point.deflectedZ.toFixed(3)),
         textposition: "top center",
         textfont: { size: 10, color: "#212529" },
         name: `Span ${selectedSpan} - Girder ${selectedGirder}`,
-        customdata: selected.map(toCustomdata),
-        hovertemplate: hover,
+        customdata: selectedPoints.map(toCustomdata),
+        hovertemplate:
+          "Interval %{pointNumber}<br>" + hover.replace("<extra></extra>", "") + "<extra></extra>",
       });
     }
   }
