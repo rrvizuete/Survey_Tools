@@ -352,6 +352,29 @@
     };
   }
 
+  /**
+   * Even-odd point-in-polygon across every ring, so a point inside an outer
+   * ring but also inside an interior ring (a hole) counts as outside.
+   */
+  function pointInRings(e, n, rings) {
+    let inside = false;
+
+    rings.forEach((ring) => {
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+        const ei = ring[i].e;
+        const ni = ring[i].n;
+        const ej = ring[j].e;
+        const nj = ring[j].n;
+
+        if (ni > n !== nj > n && e < ((ej - ei) * (n - ni)) / (nj - ni) + ei) {
+          inside = !inside;
+        }
+      }
+    });
+
+    return inside;
+  }
+
   /** Monotone chain convex hull over {e, n} points. */
   function convexHull(points) {
     const unique = [];
@@ -390,5 +413,5 @@
     return lower.concat(upper);
   }
 
-  global.BridgeIsopach = { buildIsopachMesh, buildTinInterpolator, convexHull };
+  global.BridgeIsopach = { buildIsopachMesh, buildTinInterpolator, convexHull, pointInRings };
 })(typeof window !== "undefined" ? window : globalThis);

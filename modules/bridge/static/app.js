@@ -833,14 +833,82 @@ function computeDeflectedDeck() {
   return true;
 }
 
+/**
+ * Samples the isopach on a regular grid clipped to the deck outline, so the
+ * deflection field is shown across the whole deck rather than only where the
+ * DTM happens to place vertices. Areas past the span ends read 0, which is
+ * physically correct -- the deflection parabola is zero at every support.
+ */
+function buildIsopachHeatmap(rings) {
+  const mesh = state.isopachMesh;
+  if (!mesh || !rings.length) return null;
+
+  let minE = Infinity;
+  let maxE = -Infinity;
+  let minN = Infinity;
+  let maxN = -Infinity;
+  rings.forEach((ring) =>
+    ring.forEach((point) => {
+      if (point.e < minE) minE = point.e;
+      if (point.e > maxE) maxE = point.e;
+      if (point.n < minN) minN = point.n;
+      if (point.n > maxN) maxN = point.n;
+    }),
+  );
+
+  const width = maxE - minE;
+  const height = maxN - minN;
+  if (!(width > 0) || !(height > 0)) return null;
+
+  const longest = 220;
+  const step = Math.max(width, height) / longest;
+  const cols = Math.max(2, Math.ceil(width / step) + 1);
+  const rows = Math.max(2, Math.ceil(height / step) + 1);
+
+  const xs = Array.from({ length: cols }, (_, i) => minE + i * step);
+  const ys = Array.from({ length: rows }, (_, j) => minN + j * step);
+  const z = ys.map((n) =>
+    xs.map((e) => {
+      if (!BridgeIsopach.pointInRings(e, n, rings)) return null;
+      const hit = mesh.sample(e, n);
+      return hit ? hit.value : 0;
+    }),
+  );
+
+  return { x: xs, y: ys, z };
+}
+
 function renderDeflectedDeckChart() {
   if (!ui.deckChart) return;
 
   const selectedSpan = ui.deckSpanSelect?.value ?? "";
   const selectedGirder = ui.deckGirderSelect?.value ?? "";
   const traces = [];
+  const outlineRings = getDeckOutlineRings();
 
-  getDeckOutlineRings().forEach((ring, index) => {
+  if (state.deflectedDeck) {
+    const heatmap = buildIsopachHeatmap(outlineRings);
+    if (heatmap) {
+      traces.push({
+        type: "heatmap",
+        x: heatmap.x,
+        y: heatmap.y,
+        z: heatmap.z,
+        colorscale: "YlOrRd",
+        // Plotly's YlOrRd runs dark-red -> pale, so reverse it: pale means
+        // little or no deflection, deep red means the most.
+        reversescale: true,
+        zsmooth: "best",
+        hoverongaps: false,
+        showscale: true,
+        colorbar: { title: { text: "Isopach (ft)" }, thickness: 12, tickformat: ".3f" },
+        name: "Isopach",
+        hovertemplate: "E %{x:.3f}<br>N %{y:.3f}<br>Isopach %{z:.3f} ft<extra></extra>",
+      });
+    }
+  }
+
+  outlineRings.forEach((ring, index) => {
     if (ring.length < 3) return;
     const closed = ring.concat([ring[0]]);
     traces.push({
@@ -882,14 +950,8 @@ function renderDeflectedDeckChart() {
       x: deck.points.map((point) => point.e),
       y: deck.points.map((point) => point.n),
       mode: "markers",
-      marker: {
-        size: 5,
-        color: deck.points.map((point) => point.isopach),
-        colorscale: "YlOrRd",
-        showscale: true,
-        colorbar: { title: { text: "Isopach (ft)" }, thickness: 12 },
-      },
-      name: "Deflected deck points",
+      marker: { size: 4, color: "rgba(33,37,41,0.55)" },
+      name: "DTM surface points",
       customdata: deck.points.map(toCustomdata),
       hovertemplate: hover,
     });
@@ -1063,22 +1125,36 @@ function exportTopOfDeckDeflected() {
   }
 
   if (state.deflectedDeck) {
+    const girderPoints = state.deflectedDeck.girderPoints ?? {};
     const rows = [
-      ["N", "E", "Deflected Elevation (ft)", "Description", "Original Elevation (ft)", "Isopach (ft)"],
+      ["N", "E", "Deflected Elevation (ft)", "Description", "Deck Elevation (ft)", "Isopach (ft)"],
     ];
-    state.deflectedDeck.points.forEach((point) => {
-      rows.push([
-        point.n,
-        point.e,
-        point.deflectedZ,
-        point.name || `DTM${point.id}`,
-        point.originalZ,
-        point.isopach,
-      ]);
+
+    sortedSpans().forEach((span) => {
+      sortedGirders(span).forEach((girder) => {
+        (girderPoints[`${span}||${girder}`] ?? []).forEach((point) => {
+          rows.push([
+            point.n,
+            point.e,
+            point.deflectedZ,
+            `${formatSpan(span)}${formatGirder(girder)}${formatInterval(point.interval)}`,
+            point.originalZ,
+            point.isopach,
+          ]);
+        });
+      });
     });
 
+    if (rows.length === 1) {
+      window.alert(
+        "No deflected points could be sampled along the girders. The DTM may not have TIN faces, " +
+          "or it may not cover the girder lines.",
+      );
+      return;
+    }
+
     exportRowsAsWorkbook(rows, "ToD Deflected.xlsx");
-    logLine(`Export: wrote ${state.deflectedDeck.points.length} deflected deck points to "ToD Deflected.xlsx".`);
+    logLine(`Export: wrote ${rows.length - 1} deflected deck points at girder intervals to "ToD Deflected.xlsx".`);
     return;
   }
 
