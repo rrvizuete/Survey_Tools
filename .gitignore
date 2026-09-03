@@ -3,3 +3,8 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .DS_Store
+
+# Real project data used for local testing (LandXML surfaces, girder sheets).
+# Ignored by default so client data does not end up in git history.
+modules/bridge/sample_data/*
+!modules/bridge/sample_data/README.md
