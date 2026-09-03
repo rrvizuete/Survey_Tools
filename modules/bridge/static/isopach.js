@@ -45,12 +45,17 @@
       .sort((a, b) => a.projection - b.projection)
       .map((entry) => entry.girder);
 
-    const byLabel = sortLabels(girders.map((girder) => girder.label));
+    // Position order running opposite to the numbering just means the
+    // transverse axis points the other way, which is harmless. Only a genuine
+    // reshuffle (non-adjacent girders) is worth flagging.
+    const byLabel = sortLabels(girders.map((girder) => girder.label)).join("|");
     const byPosition = ordered.map((girder) => girder.label);
-    if (byLabel.join("|") !== byPosition.join("|")) {
+    const forward = byPosition.join("|");
+    const reversed = byPosition.slice().reverse().join("|");
+    if (byLabel !== forward && byLabel !== reversed) {
       warnings.push(
-        `Span ${spanLabel}: girder numbering (${byLabel.join(", ")}) does not match transverse position ` +
-          `(${byPosition.join(", ")}). Using position order for the isopach surface.`,
+        `Span ${spanLabel}: girder numbering (${byLabel.split("|").join(", ")}) does not match transverse ` +
+          `position (${byPosition.join(", ")}). Using position order for the isopach surface.`,
       );
     }
 
