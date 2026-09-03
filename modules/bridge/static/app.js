@@ -3,7 +3,9 @@ const HELP_TEXT = `1. Data & Calculation Tab:
    - Upload the completed "Girder Data sheet" file.
    - Review imported rows in the editable grid and adjust values before calculation.
    - Set "Centerline radius (ft)" per girder: 0 or blank means straight, positive is clockwise, negative is counterclockwise (from Support1 to Support2).
-   - Set the number of intervals and run calculation.
+   - Set the number of intervals and choose Calculate.
+   - Export Top of Girder Points once you are satisfied with the results (a separate
+     step from calculating, so you can re-run the calculation without re-downloading).
    - The Calculation Log is displayed in this same tab and can be downloaded.
 
 2. Graphs Tab:
@@ -51,6 +53,10 @@ const TEMPLATE_HEADERS = [
   "Plate height at Support2 (in)",
   "Centerline radius (ft) [optional, 0=straight, +CW, -CCW]",
 ];
+
+// Shared across every Plotly chart so the modebar (zoom/pan/reset/download)
+// behaves identically everywhere.
+const PLOTLY_CONFIG = { responsive: true, displaylogo: false };
 
 const state = {
   sourceRows: [],
@@ -520,7 +526,7 @@ function renderProfileChart() {
       plot_bgcolor: "#fcfdff",
       showlegend: false,
     },
-    { responsive: true },
+    PLOTLY_CONFIG,
   );
 }
 
@@ -601,7 +607,7 @@ function renderPlanChart() {
       plot_bgcolor: "#fcfdff",
       showlegend: false,
     },
-    { responsive: true },
+    PLOTLY_CONFIG,
   );
 }
 
@@ -901,7 +907,9 @@ function renderDeflectedDeckChart() {
         zsmooth: "best",
         hoverongaps: false,
         showscale: true,
-        colorbar: { title: { text: "Deflection (ft)" }, thickness: 12, tickformat: ".3f" },
+        // title.side defaults to "top", which sits right in the corner where
+        // Plotly's modebar (zoom/pan/reset) floats, hiding it behind the text.
+        colorbar: { title: { text: "Deflection (ft)", side: "right" }, thickness: 12, tickformat: ".3f" },
         name: "Deflection",
         hovertemplate: "N %{y:.3f}<br>E %{x:.3f}<br>Deflection %{z:.3f} ft<extra></extra>",
       });
@@ -1051,7 +1059,7 @@ function renderDeflectedDeckChart() {
       plot_bgcolor: "#fcfdff",
       showlegend: false,
     },
-    { responsive: true },
+    PLOTLY_CONFIG,
   );
 }
 
@@ -1117,8 +1125,17 @@ function runCalculation() {
   populateGraphSelectors();
   renderProfileChart();
   renderPlanChart();
-  exportRowsAsWorkbook(output, "Top of girder.xlsx");
   setProgress(100, "Calculation complete");
+}
+
+function exportTopOfGirderPoints() {
+  if (state.topOfGirderPoints.length <= 1) {
+    window.alert("Please run the calculation first.");
+    return;
+  }
+
+  exportRowsAsWorkbook(state.topOfGirderPoints, "Top of girder.xlsx");
+  logLine(`Export: wrote ${state.topOfGirderPoints.length - 1} top-of-girder points to "Top of girder.xlsx".`);
 }
 
 function exportTopOfDeckDeflected() {
@@ -1192,6 +1209,7 @@ ui.tabExportBtn.addEventListener("click", () => activateTab("export"));
 
 document.getElementById("downloadTemplateBtn").addEventListener("click", downloadTemplate);
 document.getElementById("calculateBtn").addEventListener("click", runCalculation);
+document.getElementById("exportGirderBtn").addEventListener("click", exportTopOfGirderPoints);
 document.getElementById("projectBtn").addEventListener("click", exportTopOfDeckDeflected);
 document.getElementById("downloadLogBtn").addEventListener("click", downloadLog);
 
