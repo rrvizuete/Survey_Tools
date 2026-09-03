@@ -880,9 +880,17 @@ function renderDeflectedDeckChart() {
   }
 
   if (ui.deckStatus) {
-    ui.deckStatus.textContent = deck
-      ? `${deck.points.length} deflected deck points (${deck.inside} inside the isopach surface).`
-      : "Upload a DTM XML surface and choose Compute Deflected Deck.";
+    if (deck) {
+      ui.deckStatus.textContent =
+        `${deck.points.length} deflected deck points (${deck.inside} inside the isopach surface, ` +
+        `${deck.points.length - deck.inside} keeping their original elevation).`;
+    } else if (state.dtm) {
+      ui.deckStatus.textContent =
+        `"${state.dtm.name}" loaded with ${state.dtm.points.length} points. ` +
+        "Choose Compute Deflected Deck to apply the isopach.";
+    } else {
+      ui.deckStatus.textContent = "Upload a DTM XML surface and choose Compute Deflected Deck.";
+    }
   }
 
   // Spreading into Math.min/max would overflow the argument limit on a large deck.
