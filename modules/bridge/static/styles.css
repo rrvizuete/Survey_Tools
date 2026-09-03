@@ -97,6 +97,20 @@
   line-height: 1.25;
 }
 
+.grid-th-concept {
+  display: block;
+  font-weight: 700;
+}
+
+.grid-th-meta {
+  display: block;
+  margin-top: 2px;
+  font-weight: 500;
+  font-size: 0.92em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 .grid-cell {
   width: 100%;
   min-width: 78px;

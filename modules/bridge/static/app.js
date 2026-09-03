@@ -54,6 +54,34 @@ const TEMPLATE_HEADERS = [
   "Centerline radius (ft) [optional, 0=straight, +CW, -CCW]",
 ];
 
+// Two-line on-screen rendering of TEMPLATE_HEADERS: the concept on top,
+// unit + required/optional together on the bottom -- keeps columns narrow
+// without losing information. Parallel array, same length/order as
+// TEMPLATE_HEADERS (which stays unabbreviated for the downloaded template
+// workbook). The full "0=straight, +CW, -CCW" note is dropped from the
+// on-screen column since it is already covered in the Help modal.
+const GRID_HEADER_DISPLAY = [
+  { concept: "Span number" },
+  { concept: "Girder number" },
+  { concept: "Girder width", meta: "(ft)" },
+  { concept: "Girder height", meta: "(ft)" },
+  { concept: "Camber at 1/2 span", meta: "(in)" },
+  { concept: "Deflection at 1/2 span", meta: "(in) [required]" },
+  { concept: "Deflection at 1/4 span", meta: "(in) [optional]" },
+  { concept: "Deflection at 1/3 span", meta: "(in) [optional]" },
+  { concept: "Support1 Northing", meta: "(ft)" },
+  { concept: "Support1 Easting", meta: "(ft)" },
+  { concept: "Support1 Seat Z", meta: "(ft)" },
+  { concept: "Bearing height at Support1", meta: "(in)" },
+  { concept: "Plate height at Support1", meta: "(in)" },
+  { concept: "Support2 Northing", meta: "(ft)" },
+  { concept: "Support2 Easting", meta: "(ft)" },
+  { concept: "Support2 Seat Z", meta: "(ft)" },
+  { concept: "Bearing height at Support2", meta: "(in)" },
+  { concept: "Plate height at Support2", meta: "(in)" },
+  { concept: "Centerline radius", meta: "(ft) [optional]" },
+];
+
 // Shared across every Plotly chart so the modebar (zoom/pan/reset/download)
 // behaves identically everywhere.
 const PLOTLY_CONFIG = { responsive: true, displaylogo: false };
@@ -275,7 +303,12 @@ function normalizeRow(row) {
 }
 
 function renderSourceGrid() {
-  ui.sourceTableHead.innerHTML = `<tr>${TEMPLATE_HEADERS.map((h) => `<th>${h}</th>`).join("")}</tr>`;
+  ui.sourceTableHead.innerHTML = `<tr>${GRID_HEADER_DISPLAY.map(
+    ({ concept, meta }) =>
+      `<th><span class="grid-th-concept">${concept}</span>${
+        meta ? `<span class="grid-th-meta">${meta}</span>` : ""
+      }</th>`,
+  ).join("")}</tr>`;
 
   if (!state.sourceRows.length) {
     ui.sourceTableBody.innerHTML = `<tr><td colspan="${TEMPLATE_HEADERS.length}" class="text-center text-secondary py-3">Upload a spreadsheet to view/edit rows.</td></tr>`;
