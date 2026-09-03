@@ -1,21 +1,11 @@
 :root {
-  --app-bg: #f4f6f8;
-  --ink: #263240;
   --muted: #5a6b7d;
-  --accent: #0d6efd;
 }
 
-body {
-  background: var(--app-bg);
-  color: var(--ink);
-  font-size: 0.95rem;
-}
-
-main {
-  max-width: 1400px;
-}
-
-.app-shell {
+/* Named .bridge-panel, not .app-shell, to avoid colliding with the shared
+   page-shell class of the same name in the root Tailwind build (base.html
+   already wraps every module's content in its own .app-shell). */
+.bridge-panel {
   min-height: 82vh;
 }
 
