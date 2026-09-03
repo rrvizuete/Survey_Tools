@@ -73,18 +73,38 @@
 
 #sourceTable th,
 #sourceTable td {
+  font-size: 0.76rem;
+}
+
+#sourceTable td {
   white-space: nowrap;
-  font-size: 0.84rem;
+}
+
+#sourceTable th {
+  /* The shared base.html stylesheet styles bare <th> elements (uppercase,
+     bold, sticky, letter-spacing) for the Leveling module's tables, which
+     otherwise leaks into this Bootstrap table too. Reset it back to a plain
+     header and let long headers wrap onto two lines instead of forcing
+     every column to the width of its full header text. */
+  position: static;
+  background: transparent;
+  color: inherit;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: normal;
+  white-space: normal;
+  vertical-align: bottom;
+  line-height: 1.25;
 }
 
 .grid-cell {
   width: 100%;
-  min-width: 110px;
+  min-width: 78px;
   border: 1px solid #d4dbe4;
   border-radius: 0.25rem;
-  padding: 0.2rem 0.35rem;
+  padding: 0.15rem 0.3rem;
   background: #ffffff;
-  font-size: 0.83rem;
+  font-size: 0.76rem;
 }
 
 .progress-wrap {
