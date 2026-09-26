@@ -435,6 +435,7 @@ function buildGirderPoints(row, intervals) {
   const rows = [];
   const graphPoints = [];
   const planCenterline = [];
+  const planEdges = [];
 
   for (let i = 0; i <= intervals; i += 1) {
     const t = i / intervals;
@@ -473,6 +474,9 @@ function buildGirderPoints(row, intervals) {
     });
 
     planCenterline.push({ n: centerN, e: centerE });
+    // The same left/right edge positions the Top of Girder export uses, so
+    // the deflected deck can be reported directly above them.
+    planEdges.push({ n: leftN, e: leftE, side: "L" }, { n: rightN, e: rightE, side: "R" });
   }
 
   return {
@@ -487,6 +491,7 @@ function buildGirderPoints(row, intervals) {
     centerlineRadius,
     centerlineCurved: centerline.isCurved,
     planCenterline,
+    planEdges,
     rows,
     graphPoints,
   };
@@ -986,8 +991,9 @@ function computeDeflectedDeck() {
 
   // A deck DTM is often built from a few longitudinal feature lines (edges and
   // PGL), so it may have no vertex anywhere near an interior girder. Sample the
-  // deflected surface along every girder centerline instead, so each girder has
-  // elevations to report regardless of where the DTM happens to place vertices.
+  // deflected surface directly above the girder's left and right edges instead
+  // -- the same plan positions and names as the Top of Girder export -- so each
+  // girder has elevations to report regardless of where the DTM places vertices.
   const tin = state.dtmTin;
   const girderPoints = {};
   let sampledGirders = 0;
@@ -995,11 +1001,12 @@ function computeDeflectedDeck() {
   sortedSpans().forEach((span) => {
     sortedGirders(span).forEach((girder) => {
       const key = `${span}||${girder}`;
-      const centerline = state.girderGeometry[key]?.planCenterline;
-      if (!centerline?.length) return;
+      const edges = state.girderGeometry[key]?.planEdges;
+      if (!edges?.length) return;
 
       const sampled = [];
-      centerline.forEach((point, interval) => {
+      edges.forEach((point, index) => {
+        const interval = Math.floor(index / 2);
         const deckZ = tin.sample(point.e, point.n);
         if (deckZ === null) return;
         const hit = mesh.sample(point.e, point.n);
@@ -1008,6 +1015,8 @@ function computeDeflectedDeck() {
           e: point.e,
           n: point.n,
           interval,
+          side: point.side,
+          code: `${formatSpan(span)}${formatGirder(girder)}${formatInterval(interval)}${point.side}`,
           originalZ: deckZ,
           isopach,
           deflectedZ: deckZ + isopach,
@@ -1074,7 +1083,10 @@ function computeDeflectedDeck() {
       `${points.length - inside} outside (isopach held at 0, original elevation kept).`,
   );
   if (tin.triangleCount) {
-    logLine(`Deflected deck: sampled deck elevations along ${sampledGirders} girder centerlines for the plan view.`);
+    logLine(
+      `Deflected deck: sampled deck elevations above the left and right edges of ${sampledGirders} girders ` +
+        "(same positions and names as the Top of Girder points).",
+    );
   } else {
     logLine(
       "Deflected deck NOTE: the DTM has no TIN faces, so deck elevations could not be sampled along the " +
@@ -1255,18 +1267,15 @@ function renderDeflectedDeckChart() {
         y: selectedPoints.map((point) => point.n),
         mode: "markers+text",
         marker: { size: 9, color: "#d63384", line: { width: 1, color: "#fff" } },
-        // Label with the point code used in the export, so a point on the plan
-        // can be matched to its exported row.
-        text: selectedPoints.map(
-          (point) =>
-            `${formatSpan(selectedSpan)}${formatGirder(selectedGirder)}${formatInterval(point.interval)}`,
-        ),
-        textposition: "top center",
+        // Label with the point code used in the export (…L / …R, as in the Top
+        // of Girder export), so a point on the plan can be matched to its row.
+        // Left labels go above and right labels below so the pairs stay legible.
+        text: selectedPoints.map((point) => point.code),
+        textposition: selectedPoints.map((point) => (point.side === "L" ? "top center" : "bottom center")),
         textfont: { size: 10, color: "#212529" },
         name: `Span ${selectedSpan} - Girder ${selectedGirder}`,
-        customdata: selectedPoints.map(toCustomdata),
-        hovertemplate:
-          "Interval %{pointNumber}<br>" + hover.replace("<extra></extra>", "") + "<extra></extra>",
+        customdata: selectedPoints.map((point) => [...toCustomdata(point), point.code]),
+        hovertemplate: "<b>%{customdata[3]}</b><br>" + hover,
       });
     }
   }
@@ -2000,6 +2009,7 @@ function runCalculation() {
         support2N: result.support2N,
         support2E: result.support2E,
         planCenterline: result.planCenterline,
+        planEdges: result.planEdges,
       };
 
       if (!state.spanToGirders[result.spanDisplay]) {
@@ -2061,7 +2071,7 @@ function exportTopOfDeckDeflected() {
             point.n,
             point.e,
             point.deflectedZ,
-            `${formatSpan(span)}${formatGirder(girder)}${formatInterval(point.interval)}`,
+            point.code,
             point.originalZ,
             point.isopach,
             "",
