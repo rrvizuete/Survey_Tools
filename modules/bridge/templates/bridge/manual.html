@@ -182,8 +182,9 @@
         given where the screed runs.
       </p>
       <ul>
-        <li>The offset is measured <strong>from the edge of deck</strong> (where the DTM ends), square to the exterior
-          girder.</li>
+        <li>The offset is measured <strong>from the edge of deck</strong> (where the DTM ends),
+          <strong>perpendicular to the deck edge</strong>. The deck edge may curve &ndash; it usually runs parallel to the
+          alignment &ndash; even where the girders are straight, and the screed line follows it.</li>
         <li>Across the extension, the deck is carried out at its own cross slope, taken from the last 2 ft of the
           model.</li>
         <li>The exterior girder's deflection is held across the whole overhang, because the overhang cantilevers from
@@ -390,7 +391,7 @@ t = 1/2 (midspan, required), 1/4 and 1/3 (optional)</code>
 
       <h3>Overhang extension</h3>
       <code class="formula">Z(screed) = Z(edge of deck) + s &middot; offset
-s = cross slope over the last 2 ft of the deck model, square to the girder</code>
+s = cross slope over the last 2 ft of the deck model, perpendicular to the deck edge</code>
 
       <h3>Deflected surface export</h3>
       <p>

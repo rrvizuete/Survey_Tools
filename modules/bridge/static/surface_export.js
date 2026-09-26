@@ -135,13 +135,13 @@
    *   points, faces        the deck DTM (points {e, n, z}, faces [a, b, c])
    *   isopachAt(e, n)      deflection (ft) to add at a plan position
    *   cellSize             grid spacing (ft) for densifying the deck
-   *   overhangOffset       ft beyond the deck edge to extend to, or null
-   *   axis                 {e, n} unit vector along the bridge (to find side edges)
+   *   overhangOffset       ft beyond the deck edge (perpendicular to it) to extend to, or null
+   *   fascias              exterior girder lines [{fascia, outward}], to find the deck side edges
    *   deckZ(e, n)          undeflected deck elevation, for the cross slope
    *   crossSlopeRun        ft of deck, inward from the edge, that sets the cross slope
    */
   function buildDeflectedSurface(input) {
-    const { points, faces, isopachAt, cellSize, axis, deckZ } = input;
+    const { points, faces, isopachAt, cellSize, fascias, deckZ } = input;
     const overhangOffset = input.overhangOffset;
     const crossSlopeRun = input.crossSlopeRun ?? 2;
     const store = vertexStore();
@@ -225,8 +225,9 @@
 
     const deckFaces = out.length;
     let stripFaces = 0;
+    let sideEdges = 0;
     if (overhangOffset !== null && overhangOffset !== undefined && overhangOffset > 0) {
-      stripFaces = addScreedStrip(store, out, { overhangOffset, axis, deckZ, isopachAt, crossSlopeRun });
+      ({ added: stripFaces, sideEdges } = addScreedStrip(store, out, { overhangOffset, fascias, deckZ, crossSlopeRun }));
     }
 
     // Consistent counter-clockwise faces.
@@ -235,18 +236,82 @@
       .filter(([p, q, r]) => p !== q && q !== r && p !== r)
       .map(([p, q, r]) => (signedArea(vertices[p], vertices[q], vertices[r]) < 0 ? [p, r, q] : [p, q, r]));
 
-    return { vertices, faces: faceList, deckFaces, stripFaces };
+    return { vertices, faces: faceList, deckFaces, stripFaces, sideEdges };
   }
 
-  /** Adds the strip from the deck's side edges out to the screed line; returns faces added. */
+  /**
+   * Adds the strip from the deck's side edges out to the screed line, which
+   * lies `overhangOffset` beyond the deck edge, perpendicular to it. Returns
+   * the number of faces added.
+   */
   function addScreedStrip(store, out, options) {
-    const { overhangOffset, axis, deckZ, isopachAt, crossSlopeRun } = options;
+    const { overhangOffset, fascias, deckZ, crossSlopeRun } = options;
     const vertices = store.vertices;
+    const sides = deckSideEdges(tinBoundary(vertices, out), fascias);
 
-    // Boundary edges: used by exactly one face. Keep the opposite vertex to
-    // know which side is outward.
+    // Cross slope at each side-edge vertex, over the last `crossSlopeRun` ft of
+    // deck. At a deck corner that run can land on the end edge, where the DTM
+    // gives no elevation; take the slope from a neighbour along the edge then.
+    const slopes = new Map();
+    sides.vertexNormals.forEach((normal, index) => {
+      const v = vertices[index];
+      const inner = deckZ(v.e - normal.e * crossSlopeRun, v.n - normal.n * crossSlopeRun);
+      if (inner !== null) slopes.set(index, (v.deckZ - inner) / crossSlopeRun);
+    });
+    for (let pass = 0; pass < 3; pass += 1) {
+      sides.edges.forEach((edge) => {
+        if (!slopes.has(edge.ia) && slopes.has(edge.ib)) slopes.set(edge.ia, slopes.get(edge.ib));
+        if (!slopes.has(edge.ib) && slopes.has(edge.ia)) slopes.set(edge.ib, slopes.get(edge.ia));
+      });
+    }
+
+    // One screed point per side-edge vertex, straight out from the deck edge.
+    const screed = new Map();
+    sides.vertexNormals.forEach((normal, index) => {
+      const v = vertices[index];
+      const slope = slopes.get(index) ?? 0;
+      const screedDeckZ = v.deckZ + slope * overhangOffset;
+      // The overhang holds the deflection it has at the deck edge (the fascia
+      // girder's), already applied to this vertex. Reading it here rather than
+      // at the screed keeps it right where a curved screed line bulges past
+      // the chorded isopach mesh.
+      const isopach = v.z - v.deckZ;
+      screed.set(
+        index,
+        store.add(v.e + normal.e * overhangOffset, v.n + normal.n * overhangOffset, () => ({
+          deckZ: screedDeckZ,
+          z: screedDeckZ + isopach,
+          screed: true,
+        })),
+      );
+    });
+
+    let added = 0;
+    sides.edges.forEach((edge) => {
+      const su = screed.get(edge.ia);
+      const sv = screed.get(edge.ib);
+      if (su === undefined || sv === undefined) return;
+      out.push([edge.ia, edge.ib, sv], [edge.ia, sv, su]);
+      added += 2;
+    });
+    return { added, sideEdges: sides.edges.length };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Deck side edges
+  //
+  // The overhang (screed) line is measured perpendicular to the deck edge,
+  // which may curve (it usually follows the alignment) while precast girders
+  // are straight. These helpers find the deck's side edges -- the TIN
+  // boundary running along each exterior girder -- with outward normals.
+  // ---------------------------------------------------------------------------
+
+  const SIDE_EDGE_MAX_ANGLE = 30; // degrees between a side edge and its local girder
+
+  /** Boundary edges of a TIN (used by one face), with unit outward normals. */
+  function tinBoundary(points, faces) {
     const edges = new Map();
-    out.forEach(([p, q, r]) => {
+    faces.forEach(([p, q, r]) => {
       [
         [p, q, r],
         [q, r, p],
@@ -259,68 +324,118 @@
       });
     });
 
-    // Side edges run along the bridge; the ends (abutments) run across it.
-    const sideCos = Math.cos((30 * Math.PI) / 180);
-    const normals = new Map();
-    const sideEdges = [];
+    const boundary = [];
     edges.forEach((edge) => {
       if (edge.count !== 1) return;
-      const a = vertices[edge.u];
-      const b = vertices[edge.v];
+      const a = points[edge.u];
+      const b = points[edge.v];
       const length = Math.hypot(b.e - a.e, b.n - a.n);
       if (length < 1e-9) return;
-      const dirE = (b.e - a.e) / length;
-      const dirN = (b.n - a.n) / length;
-      if (Math.abs(dirE * axis.e + dirN * axis.n) < sideCos) return;
+      const dir = { e: (b.e - a.e) / length, n: (b.n - a.n) / length };
+      let normal = { e: -dir.n, n: dir.e };
+      const opposite = points[edge.w];
+      if ((opposite.e - a.e) * normal.e + (opposite.n - a.n) * normal.n > 0) normal = { e: -normal.e, n: -normal.n };
+      boundary.push({ ia: edge.u, ib: edge.v, a, b, dir, normal, length });
+    });
+    return boundary;
+  }
 
-      let normalE = -dirN;
-      let normalN = dirE;
-      const opposite = vertices[edge.w];
-      if ((opposite.e - a.e) * normalE + (opposite.n - a.n) * normalN > 0) {
-        normalE = -normalE;
-        normalN = -normalN;
+  /** Closest point on a polyline, with the interpolated outward normal there. */
+  function closestOnFascia(fascia, e, n) {
+    let best = null;
+    const { fascia: line, outward } = fascia;
+    for (let i = 0; i + 1 < line.length; i += 1) {
+      const a = line[i];
+      const b = line[i + 1];
+      const dE = b.e - a.e;
+      const dN = b.n - a.n;
+      const lengthSq = dE * dE + dN * dN;
+      if (lengthSq < 1e-18) continue;
+      const u = Math.max(0, Math.min(1, ((e - a.e) * dE + (n - a.n) * dN) / lengthSq));
+      const foot = { e: a.e + u * dE, n: a.n + u * dN };
+      const distance = Math.hypot(e - foot.e, n - foot.n);
+      if (!best || distance < best.distance) {
+        const length = Math.sqrt(lengthSq);
+        let oe = (1 - u) * outward[i].e + u * outward[i + 1].e;
+        let on = (1 - u) * outward[i].n + u * outward[i + 1].n;
+        const olength = Math.hypot(oe, on) || 1;
+        oe /= olength;
+        on /= olength;
+        best = { distance, foot, tangent: { e: dE / length, n: dN / length }, outward: { e: oe, n: on } };
       }
-      sideEdges.push(edge);
-      [edge.u, edge.v].forEach((index) => {
-        const sum = normals.get(index) || { e: 0, n: 0 };
-        sum.e += normalE;
-        sum.n += normalN;
-        normals.set(index, sum);
+    }
+    return best;
+  }
+
+  /**
+   * Boundary edges that are deck sides: within SIDE_EDGE_MAX_ANGLE of the
+   * nearest exterior girder's local direction, outside it, and facing away
+   * from it. Using each girder's local direction (not one bridge-wide axis)
+   * keeps curved decks and spans with different headings covered.
+   * Each side edge gains vertex normals (`na`, `nb`) averaged with its
+   * neighbours, so offsets follow a curved edge smoothly.
+   *
+   * @param fascias  [{fascia: [{e, n}], outward: [{e, n}]}] exterior girder lines
+   */
+  function deckSideEdges(boundary, fascias) {
+    const minCos = Math.cos((SIDE_EDGE_MAX_ANGLE * Math.PI) / 180);
+    const sides = boundary.filter((edge) => {
+      const mid = { e: (edge.a.e + edge.b.e) / 2, n: (edge.a.n + edge.b.n) / 2 };
+      let near = null;
+      fascias.forEach((fascia) => {
+        const hit = closestOnFascia(fascia, mid.e, mid.n);
+        if (hit && (!near || hit.distance < near.distance)) near = hit;
+      });
+      if (!near) return false;
+      const along = Math.abs(edge.dir.e * near.tangent.e + edge.dir.n * near.tangent.n);
+      const facesOut = edge.normal.e * near.outward.e + edge.normal.n * near.outward.n > 0;
+      const outside = (mid.e - near.foot.e) * near.outward.e + (mid.n - near.foot.n) * near.outward.n > 0;
+      return along >= minCos && facesOut && outside;
+    });
+
+    const sums = new Map();
+    sides.forEach((edge) => {
+      [edge.ia, edge.ib].forEach((index) => {
+        const sum = sums.get(index) || { e: 0, n: 0 };
+        sum.e += edge.normal.e;
+        sum.n += edge.normal.n;
+        sums.set(index, sum);
       });
     });
-
-    // One screed point per side-edge vertex, straight out from the deck edge.
-    const screed = new Map();
-    normals.forEach((sum, index) => {
-      const length = Math.hypot(sum.e, sum.n);
-      if (length < 1e-9) return;
-      const ne = sum.e / length;
-      const nn = sum.n / length;
-      const v = vertices[index];
-
-      const inner = deckZ(v.e - ne * crossSlopeRun, v.n - nn * crossSlopeRun);
-      const slope = inner === null ? 0 : (v.deckZ - inner) / crossSlopeRun;
-      const e = v.e + ne * overhangOffset;
-      const n = v.n + nn * overhangOffset;
-      const screedDeckZ = v.deckZ + slope * overhangOffset;
-      // Read the deflection just inside the screed line, where the isopach
-      // mesh still covers it.
-      const isopach = isopachAt(v.e + ne * (overhangOffset - 1e-4), v.n + nn * (overhangOffset - 1e-4));
-      screed.set(
-        index,
-        store.add(e, n, () => ({ deckZ: screedDeckZ, z: screedDeckZ + isopach, screed: true })),
-      );
+    const unit = (v) => {
+      const length = Math.hypot(v.e, v.n) || 1;
+      return { e: v.e / length, n: v.n / length };
+    };
+    const vertexNormals = new Map();
+    sums.forEach((sum, index) => vertexNormals.set(index, unit(sum)));
+    sides.forEach((edge) => {
+      edge.na = vertexNormals.get(edge.ia);
+      edge.nb = vertexNormals.get(edge.ib);
     });
+    return { edges: sides, vertexNormals };
+  }
 
-    let added = 0;
-    sideEdges.forEach((edge) => {
-      const su = screed.get(edge.u);
-      const sv = screed.get(edge.v);
-      if (su === undefined || sv === undefined) return;
-      out.push([edge.u, edge.v, sv], [edge.u, sv, su]);
-      added += 2;
+  /** Closest point on the deck side edges to (e, n), with the outward normal there. */
+  function closestOnDeckEdge(sides, e, n) {
+    let best = null;
+    sides.edges.forEach((edge) => {
+      const { a, b } = edge;
+      const dE = b.e - a.e;
+      const dN = b.n - a.n;
+      const u = Math.max(0, Math.min(1, ((e - a.e) * dE + (n - a.n) * dN) / (edge.length * edge.length)));
+      const pe = a.e + u * dE;
+      const pn = a.n + u * dN;
+      const distance = Math.hypot(e - pe, n - pn);
+      if (!best || distance < best.distance) best = { distance, e: pe, n: pn, u, edge };
     });
-    return added;
+    if (!best) return null;
+    const { edge, u } = best;
+    let ne = (1 - u) * edge.na.e + u * edge.nb.e;
+    let nn = (1 - u) * edge.na.n + u * edge.nb.n;
+    const length = Math.hypot(ne, nn) || 1;
+    ne /= length;
+    nn /= length;
+    return { e: best.e, n: best.n, distance: best.distance, normal: { e: ne, n: nn } };
   }
 
   function escapeXml(text) {
@@ -372,5 +487,11 @@
     return lines.join("\n");
   }
 
-  global.BridgeSurfaceExport = { buildDeflectedSurface, toLandXml };
+  global.BridgeSurfaceExport = {
+    buildDeflectedSurface,
+    toLandXml,
+    tinBoundary,
+    deckSideEdges,
+    closestOnDeckEdge,
+  };
 })(typeof window !== "undefined" ? window : globalThis);

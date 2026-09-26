@@ -675,6 +675,7 @@ async function loadDtmSurface() {
   if (!file) {
     state.dtm = null;
     state.dtmTin = null;
+    state.dtmBoundary = null;
     state.planRevision += 1;
     ui.dtmUploadStatus.textContent = "";
     refreshSections();
@@ -690,6 +691,7 @@ async function loadDtmSurface() {
   state.dtmUnitsXml = (text.match(/<Units>[\s\S]*?<\/Units>/) || [null])[0];
   state.dtmFileName = file.name;
   state.dtmTin = BridgeIsopach.buildTinInterpolator(surface.points, surface.faces);
+  state.dtmBoundary = null;
   state.planRevision += 1;
 
   ui.dtmUploadStatus.textContent = `Loaded "${surface.name}" - ${surface.points.length} points, ${surface.faces.length} faces.`;
@@ -726,144 +728,109 @@ function readOverhangOffset() {
 // How much of the deck, inward from the DTM edge, sets the cross slope that
 // is carried out to the overhang (screed) line.
 const CROSS_SLOPE_RUN = 2;
-// Furthest the edge-of-deck search looks outward from an exterior girder.
-const DECK_EDGE_SEARCH = 200;
+// Tolerance (ft) when deciding whether a point is within the overhang.
+const OVERHANG_TOLERANCE = 1e-3;
 
 /**
- * Distance from each fascia point to the DTM (edge of deck) along its outward
- * normal. Points whose girder position is outside the DTM borrow the nearest
- * measured distance; null when none could be measured.
+ * Deck side edges -- the DTM boundary running along the given exterior
+ * girders -- with outward normals. The overhang is measured perpendicular to
+ * these edges, which may curve (they usually follow the alignment) even where
+ * the girders are straight.
  */
-function deckEdgeDistances(tin, points, normals) {
-  const inside = (point, normal, s) => tin.sample(point.e + normal.e * s, point.n + normal.n * s) !== null;
+function deckSidesFor(fascias) {
+  if (!state.dtmBoundary) {
+    state.dtmBoundary = BridgeSurfaceExport.tinBoundary(state.dtm.points, state.dtm.faces);
+  }
+  return BridgeSurfaceExport.deckSideEdges(state.dtmBoundary, fascias);
+}
 
-  const measured = points.map((point, index) => {
-    const normal = normals[index];
-    if (!inside(point, normal, 0)) return null;
-
-    // Step outward to bracket the edge, then bisect it.
-    let low = 0;
-    let high = 1;
-    while (high <= DECK_EDGE_SEARCH && inside(point, normal, high)) {
-      low = high;
-      high *= 2;
+/**
+ * Deck elevation at a deck-edge point and the cross slope carried out from it
+ * (over the last CROSS_SLOPE_RUN ft of the model, perpendicular to the edge).
+ * `z(d)` gives the deck elevation `d` ft beyond the edge.
+ */
+function deckEdgeProfile(tin, edgePoint) {
+  const nudge = 1e-4; // read just inside the edge, where the TIN is certain to answer
+  // At a deck corner, straight inward runs along the end edge, where the TIN
+  // has no answer; step a hair along the edge (either way) to stay on the deck.
+  const tangent = { e: -edgePoint.normal.n, n: edgePoint.normal.e };
+  const inward = (s) => {
+    for (const t of [0, 0.01, -0.01]) {
+      const z = tin.sample(
+        edgePoint.e - edgePoint.normal.e * s + tangent.e * t,
+        edgePoint.n - edgePoint.normal.n * s + tangent.n * t,
+      );
+      if (z !== null) return z;
     }
-    if (high > DECK_EDGE_SEARCH) return null;
-    for (let i = 0; i < 40 && high - low > 1e-6; i += 1) {
-      const middle = (low + high) / 2;
-      if (inside(point, normal, middle)) low = middle;
-      else high = middle;
-    }
-    return low;
-  });
-
-  if (measured.every((distance) => distance === null)) return null;
-  return measured.map((distance, index) => {
-    if (distance !== null) return distance;
-    for (let step = 1; step < measured.length; step += 1) {
-      if (measured[index - step] != null) return measured[index - step];
-      if (measured[index + step] != null) return measured[index + step];
-    }
-    return 0;
-  });
+    return null;
+  };
+  const edgeZ = inward(nudge);
+  if (edgeZ === null) return null;
+  const backZ = inward(CROSS_SLOPE_RUN);
+  const slope = backZ === null ? 0 : (edgeZ - backZ) / (CROSS_SLOPE_RUN - nudge);
+  return { slope, z: (d) => edgeZ + slope * (d + nudge) };
 }
 
 /**
  * Deck elevations out to the overhang (screed) line. Inside the DTM this is
- * the TIN elevation. In the band between an exterior girder and its overhang
- * edge, but past the DTM, the last CROSS_SLOPE_RUN ft of deck is extended
- * square to the girder at its own cross slope, so a surveyor gets prorated
- * elevations where the screed sits beyond the model.
+ * the TIN elevation. Between the deck edge and the screed line -- the
+ * overhang offset beyond the edge, perpendicular to it -- the last
+ * CROSS_SLOPE_RUN ft of deck is carried out at its own cross slope, so a
+ * surveyor gets prorated elevations where the screed sits beyond the model.
  */
 function buildDeckSurface(tin, mesh, overhangOffset) {
-  const bands = [];
-  if (overhangOffset !== null && mesh) {
-    mesh.overhangEdges.forEach((edge) => {
-      const centerline = state.girderGeometry[`${edge.span}||${edge.girder}`]?.planCenterline;
-      if (centerline?.length >= 2) bands.push({ ...edge, centerline });
-    });
-  }
+  const sides = overhangOffset !== null && mesh && tin ? deckSidesFor(mesh.overhangEdges) : null;
+  const active = Boolean(sides?.edges.length);
 
-  /** Foot on the fascia girder and outward distance, if the point is in an overhang band. */
+  /** Deck-edge point and distance beyond it, if the point is in the overhang. */
   function locate(e, n) {
-    let best = null;
-    bands.forEach((band) => {
-      const { centerline, points: edgePoints } = band;
-      const bandWidthAt = (index) =>
-        Math.hypot(edgePoints[index].e - centerline[index].e, edgePoints[index].n - centerline[index].n);
-      for (let i = 0; i + 1 < centerline.length; i += 1) {
-        const a = centerline[i];
-        const b = centerline[i + 1];
-        const dE = b.e - a.e;
-        const dN = b.n - a.n;
-        const lengthSq = dE * dE + dN * dN;
-        if (lengthSq < 1e-12) continue;
-        const u = ((e - a.e) * dE + (n - a.n) * dN) / lengthSq;
-        if (u < -1e-9 || u > 1 + 1e-9) continue;
-
-        const foot = { e: a.e + u * dE, n: a.n + u * dN };
-        // Outward direction, interpolated from the overhang edge rows.
-        let outE = (1 - u) * (edgePoints[i].e - a.e) + u * (edgePoints[i + 1].e - b.e);
-        let outN = (1 - u) * (edgePoints[i].n - a.n) + u * (edgePoints[i + 1].n - b.n);
-        const outLength = Math.hypot(outE, outN);
-        if (outLength < 1e-9) continue;
-        outE /= outLength;
-        outN /= outLength;
-
-        const along = (e - foot.e) * outE + (n - foot.n) * outN;
-        // The band reaches the overhang edge row, which sits the edge-of-deck
-        // distance plus the offset out -- so its width varies along the girder.
-        const width = (1 - u) * bandWidthAt(i) + u * bandWidthAt(i + 1);
-        if (along <= 0 || along > width + 1e-6) continue;
-        if (!best || along < best.along) best = { foot, outE, outN, along, band };
-      }
-    });
-    return best;
+    const edge = BridgeSurfaceExport.closestOnDeckEdge(sides, e, n);
+    if (!edge) return null;
+    const dE = e - edge.e;
+    const dN = n - edge.n;
+    const along = dE * edge.normal.e + dN * edge.normal.n;
+    const lateral = Math.abs(dE * edge.normal.n - dN * edge.normal.e);
+    if (along <= 0 || along > overhangOffset + OVERHANG_TOLERANCE) return null;
+    // Past the end of a deck side (e.g. beyond the abutment corner) the
+    // closest edge point is the corner, off to one side: not overhang.
+    if (lateral > OVERHANG_TOLERANCE + 0.05 * along) return null;
+    return { edge, along };
   }
 
-  function extendedZ(hit) {
-    const at = (s) => tin.sample(hit.foot.e + hit.outE * s, hit.foot.n + hit.outN * s);
-    if (at(0) === null) return null;
-
-    // Bisect for the DTM edge between the girder (inside) and the point (outside).
-    let inside = 0;
-    let outside = hit.along;
-    for (let i = 0; i < 40 && outside - inside > 1e-6; i += 1) {
-      const middle = (inside + outside) / 2;
-      if (at(middle) === null) outside = middle;
-      else inside = middle;
-    }
-
-    const edgeZ = at(inside);
-    const back = Math.max(0, inside - CROSS_SLOPE_RUN);
-    const backZ = at(back);
-    const slope = backZ !== null && inside - back > 0.05 ? (edgeZ - backZ) / (inside - back) : 0;
-    return { z: edgeZ + slope * (hit.along - inside), crossSlope: slope, dtmEdge: inside };
-  }
+  /** The overhang carries the deflection it has at the deck edge (the fascia girder's). */
+  const edgeMeshPoint = (edge) => ({ e: edge.e - edge.normal.e * 1e-4, n: edge.n - edge.normal.n * 1e-4 });
 
   return {
-    extends: bands.length > 0,
+    extends: active,
+    sides,
     /** True where the deck exists only because of the overhang extension. */
     inOverhangBand(e, n) {
-      return bands.length > 0 && locate(e, n) !== null;
+      return active && (!tin || tin.sample(e, n) === null) && locate(e, n) !== null;
     },
-    /** {z, extended, crossSlope} or null where there is no deck. */
+    /** Deflection to apply at a plan position, including across the overhang. */
+    isopachAt(e, n) {
+      const hit = mesh?.sample(e, n);
+      if (hit) return hit.value;
+      if (!active) return 0;
+      const band = locate(e, n);
+      if (!band) return 0;
+      const point = edgeMeshPoint(band.edge);
+      return mesh.sample(point.e, point.n)?.value ?? 0;
+    },
+    /** {z, extended, crossSlope, meshPoint?} or null where there is no deck. */
     sample(e, n) {
       const z = tin ? tin.sample(e, n) : null;
       if (z !== null) return { z, extended: false, crossSlope: null };
-      if (!bands.length || !tin) return null;
+      if (!active) return null;
       const hit = locate(e, n);
       if (!hit) return null;
-      const result = extendedZ(hit);
-      if (!result) return null;
-      // A point sitting right on the screed line is on the mesh boundary,
-      // where sampling can miss by rounding; nudge inward to read it.
-      const inward = Math.max(0, hit.along - 1e-4);
+      const profile = deckEdgeProfile(tin, hit.edge);
+      if (!profile) return null;
       return {
-        z: result.z,
+        z: profile.z(hit.along),
         extended: true,
-        crossSlope: result.crossSlope,
-        meshPoint: { e: hit.foot.e + hit.outE * inward, n: hit.foot.n + hit.outN * inward },
+        crossSlope: profile.slope,
+        meshPoint: edgeMeshPoint(hit.edge),
       };
     },
   };
@@ -931,23 +898,35 @@ function computeDeflectedDeck() {
     return false;
   }
 
-  // The overhang offset is measured from the edge of deck (where the DTM
-  // ends), so find that edge square to each exterior girder interval.
+  // The overhang offset is measured perpendicular to the edge of deck (where
+  // the DTM ends), which may curve while the girders are straight. For each
+  // exterior girder interval, take the nearest point on its deck edge and go
+  // out the offset along that edge's outward normal.
   const edgeRanges = [];
-  const overhangDistance =
+  const screedGeometry = new Map();
+  const overhangPoints =
     overhangOffset === null
       ? undefined
       : ({ span, girder, points, normals }) => {
-          const toEdge = deckEdgeDistances(state.dtmTin, points, normals);
-          if (!toEdge) {
+          const sides = deckSidesFor([{ fascia: points, outward: normals }]);
+          if (!sides.edges.length) {
             logLine(
-              `Overhang WARNING: Span ${span}, Girder ${girder}: the DTM does not cover this exterior girder, ` +
-                "so the overhang offset is measured from the girder centerline instead.",
+              `Overhang WARNING: Span ${span}, Girder ${girder}: no deck edge was found alongside this exterior ` +
+                "girder, so the overhang offset is measured from the girder centerline instead.",
             );
-            return points.map(() => overhangOffset);
+            return points.map((point, index) => ({
+              e: point.e + normals[index].e * overhangOffset,
+              n: point.n + normals[index].n * overhangOffset,
+            }));
           }
+          const edges = points.map((point) => BridgeSurfaceExport.closestOnDeckEdge(sides, point.e, point.n));
+          screedGeometry.set(`${span}||${girder}`, edges);
+          const toEdge = edges.map((edge) => edge.distance);
           edgeRanges.push({ span, girder, min: Math.min(...toEdge), max: Math.max(...toEdge) });
-          return toEdge.map((distance) => distance + overhangOffset);
+          return edges.map((edge) => ({
+            e: edge.e + edge.normal.e * overhangOffset,
+            n: edge.n + edge.normal.n * overhangOffset,
+          }));
         };
 
   const mesh = BridgeIsopach.buildIsopachMesh({
@@ -955,13 +934,16 @@ function computeDeflectedDeck() {
     girderGeometry: state.girderGeometry,
     profiles: state.profiles,
     overhangOffset,
-    overhangDistance,
+    overhangPoints,
   });
   mesh.warnings.forEach((warning) => logLine(`Isopach WARNING: ${warning}`));
   if (overhangOffset === null) {
     logLine("Isopach: no overhang offset given; the deck is not extended past the DTM.");
   } else {
-    logLine(`Isopach: overhang edge set ${overhangOffset.toFixed(3)} ft outside the edge of deck (DTM edge).`);
+    logLine(
+      `Isopach: overhang edge set ${overhangOffset.toFixed(3)} ft beyond the edge of deck (DTM edge), ` +
+        "measured perpendicular to the deck edge.",
+    );
     edgeRanges.forEach((range) => {
       logLine(
         `Overhang: Span ${range.span}, Girder ${range.girder}: edge of deck ${range.min.toFixed(3)}` +
@@ -1060,10 +1042,19 @@ function computeDeflectedDeck() {
   let extendedEdgePoints = 0;
   if (deckSurface.extends) {
     mesh.overhangEdges.forEach((edge) => {
-      const profile = state.profiles[`${edge.span}||${edge.girder}`] ?? [];
+      const key = `${edge.span}||${edge.girder}`;
+      const profile = state.profiles[key] ?? [];
+      const deckEdges = screedGeometry.get(key);
       edge.points.forEach((point, interval) => {
-        const deck = deckSurface.sample(point.e, point.n);
-        if (!deck || !profile[interval]) return;
+        if (!profile[interval]) return;
+        // Carry the deck out from the deck-edge point this screed point was
+        // placed from; without one (no deck edge found) fall back to sampling.
+        const deckEdge = deckEdges?.[interval];
+        const edgeProfile = deckEdge ? deckEdgeProfile(tin, deckEdge) : null;
+        const deck = edgeProfile
+          ? { z: edgeProfile.z(overhangOffset), extended: true, crossSlope: edgeProfile.slope }
+          : deckSurface.sample(point.e, point.n);
+        if (!deck) return;
         // The overhang row carries the fascia value by construction; read it
         // from the profile rather than sampling right on the mesh boundary.
         const isopach = profile[interval].deflectionIn / 12;
@@ -1163,6 +1154,7 @@ function buildIsopachHeatmap(rings) {
   const z = ys.map((n) =>
     xs.map((e) => {
       if (!BridgeIsopach.pointInRings(e, n, rings) && !(extendsDeck && surface.inOverhangBand(e, n))) return null;
+      if (extendsDeck) return surface.isopachAt(e, n);
       const hit = mesh.sample(e, n);
       return hit ? hit.value : 0;
     }),
@@ -2154,30 +2146,6 @@ function exportTopOfDeckDeflected() {
 // captured between the DTM's own vertices.
 const SURFACE_CELL_SIZE = 5;
 
-/** Unit vector along the bridge: the mean girder chord direction. */
-function bridgeAxis() {
-  let sumE = 0;
-  let sumN = 0;
-  let first = null;
-  Object.values(state.girderGeometry).forEach((geometry) => {
-    const dE = geometry.support2E - geometry.support1E;
-    const dN = geometry.support2N - geometry.support1N;
-    const length = Math.hypot(dE, dN);
-    if (length < 1e-9) return;
-    let e = dE / length;
-    let n = dN / length;
-    if (!first) first = { e, n };
-    else if (e * first.e + n * first.n < 0) {
-      e = -e;
-      n = -n;
-    }
-    sumE += e;
-    sumN += n;
-  });
-  const length = Math.hypot(sumE, sumN);
-  return length > 1e-9 ? { e: sumE / length, n: sumN / length } : { e: 1, n: 0 };
-}
-
 function exportDeflectedSurfaceXml() {
   if (!state.topOfGirderPoints.length) {
     window.alert("Please calculate the top-of-girder points first (Girder Calcs tab).");
@@ -2203,7 +2171,8 @@ function exportDeflectedSurfaceXml() {
     deckZ: (e, n) => tin.sample(e, n),
     cellSize: SURFACE_CELL_SIZE,
     overhangOffset,
-    axis: bridgeAxis(),
+    // The exterior girders, so the deck's side edges can be found locally.
+    fascias: mesh.overhangEdges,
     crossSlopeRun: CROSS_SLOPE_RUN,
   });
 
@@ -2262,6 +2231,7 @@ ui.dtmFileInput.addEventListener("change", async () => {
   } catch (error) {
     state.dtm = null;
     state.dtmTin = null;
+    state.dtmBoundary = null;
     state.deflectedDeck = null;
     ui.dtmUploadStatus.textContent = `Error loading DTM: ${error.message}`;
     logLine(`DTM ERROR: ${error.message}`);

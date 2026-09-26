@@ -76,14 +76,17 @@
    * fascia deflection across the overhang (the deck keeps its cross slope)
    * instead of dropping to zero at the girder line.
    *
-   * With `overhangDistance`, the edge row sits the distance it returns from
-   * the fascia girder, square to it. The callback receives the fascia row's
-   * points and outward unit normals and returns one distance per point, so
-   * the caller can measure from wherever the deck edge actually is. With a
-   * plain `overhangOffset`, every point uses that distance. With neither, the
-   * fascia row is mirrored by the adjacent girder spacing.
+   * With `overhangPoints`, the edge row is wherever the callback puts it:
+   * it receives the fascia row's points and outward unit normals and returns
+   * one {e, n} per point, so the caller can place the edge relative to the
+   * actual deck edge. With a plain `overhangOffset`, each point moves that
+   * distance square to the girder. With neither, the fascia row is mirrored
+   * by the adjacent girder spacing.
+   *
+   * Each edge row keeps its fascia line and outward normals (`fascia`,
+   * `outward`) so callers can work relative to the exterior girder.
    */
-  function addOverhangRows(rows, spanLabel, overhangOffset, overhangDistance) {
+  function addOverhangRows(rows, spanLabel, overhangOffset, overhangPoints) {
     if (rows.length < 2) return rows;
     const useOffset = Number.isFinite(overhangOffset) && overhangOffset > 0;
 
@@ -111,10 +114,15 @@
       });
 
     const push = (inner, neighbor, label) => {
-      if (!overhangDistance && !useOffset) {
+      const normals = outwardNormals(inner, neighbor);
+      const fascia = inner.points.map(({ e, n }) => ({ e, n }));
+
+      if (!overhangPoints && !useOffset) {
         return {
           girder: label,
           virtual: true,
+          fascia,
+          outward: normals,
           points: inner.points.map((point, index) => {
             const other = neighbor.points[index];
             if (!other) return { e: point.e, n: point.n, value: point.value };
@@ -123,19 +131,19 @@
         };
       }
 
-      const normals = outwardNormals(inner, neighbor);
-      const distances = overhangDistance
-        ? overhangDistance({ span: spanLabel, girder: label, points: inner.points, normals })
-        : inner.points.map(() => overhangOffset);
+      const placed = overhangPoints
+        ? overhangPoints({ span: spanLabel, girder: label, points: inner.points, normals })
+        : inner.points.map((point, index) => ({
+            e: point.e + normals[index].e * overhangOffset,
+            n: point.n + normals[index].n * overhangOffset,
+          }));
 
       return {
         girder: label,
         virtual: true,
-        points: inner.points.map((point, index) => ({
-          e: point.e + normals[index].e * distances[index],
-          n: point.n + normals[index].n * distances[index],
-          value: point.value,
-        })),
+        fascia,
+        outward: normals,
+        points: inner.points.map((point, index) => ({ e: placed[index].e, n: placed[index].n, value: point.value })),
       };
     };
 
@@ -376,10 +384,16 @@
         buildRows(girders, warnings, spanLabel),
         spanLabel,
         overhangOffset,
-        input.overhangDistance,
+        input.overhangPoints,
       );
       [rows[0], rows[rows.length - 1]].forEach((row) => {
-        overhangEdges.push({ span: spanLabel, girder: row.girder, points: row.points.map(({ e, n }) => ({ e, n })) });
+        overhangEdges.push({
+          span: spanLabel,
+          girder: row.girder,
+          points: row.points.map(({ e, n }) => ({ e, n })),
+          fascia: row.fascia,
+          outward: row.outward,
+        });
       });
       const before = triangles.length;
       buildCells(rows, spanLabel, triangles);
