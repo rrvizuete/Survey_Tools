@@ -736,9 +736,13 @@ async function loadDtmSurface() {
     return;
   }
 
-  const { surfaces } = BridgeLandXml.parseLandXml(await readTextFile(file));
+  const text = await readTextFile(file);
+  const { surfaces } = BridgeLandXml.parseLandXml(text);
   const surface = surfaces[0];
   state.dtm = surface;
+  // Reused verbatim in the exported surface so it keeps the source's units.
+  state.dtmUnitsXml = (text.match(/<Units>[\s\S]*?<\/Units>/) || [null])[0];
+  state.dtmFileName = file.name;
   state.dtmTin = BridgeIsopach.buildTinInterpolator(surface.points, surface.faces);
   state.planRevision += 1;
 
@@ -2200,6 +2204,83 @@ function exportTopOfDeckDeflected() {
   );
 }
 
+// Plan grid (ft) used to densify the deck TIN so the deflection curve is
+// captured between the DTM's own vertices.
+const SURFACE_CELL_SIZE = 5;
+
+/** Unit vector along the bridge: the mean girder chord direction. */
+function bridgeAxis() {
+  let sumE = 0;
+  let sumN = 0;
+  let first = null;
+  Object.values(state.girderGeometry).forEach((geometry) => {
+    const dE = geometry.support2E - geometry.support1E;
+    const dN = geometry.support2N - geometry.support1N;
+    const length = Math.hypot(dE, dN);
+    if (length < 1e-9) return;
+    let e = dE / length;
+    let n = dN / length;
+    if (!first) first = { e, n };
+    else if (e * first.e + n * first.n < 0) {
+      e = -e;
+      n = -n;
+    }
+    sumE += e;
+    sumN += n;
+  });
+  const length = Math.hypot(sumE, sumN);
+  return length > 1e-9 ? { e: sumE / length, n: sumN / length } : { e: 1, n: 0 };
+}
+
+function exportDeflectedSurfaceXml() {
+  if (!state.topOfGirderPoints.length) {
+    window.alert("Please calculate the top-of-girder points first (Girder Calcs tab).");
+    return;
+  }
+  if (!state.dtm) {
+    window.alert("Please upload the top-of-deck DTM XML surface first.");
+    return;
+  }
+  if (!state.deflectedDeck && !computeDeflectedDeck()) return;
+  if (!state.dtm.faces.length) {
+    window.alert("The DTM has no TIN faces, so a deflected surface cannot be built from it.");
+    return;
+  }
+
+  const mesh = state.isopachMesh;
+  const tin = state.dtmTin;
+  const overhangOffset = state.deflectedDeck.overhangOffset;
+  const surface = BridgeSurfaceExport.buildDeflectedSurface({
+    points: state.dtm.points,
+    faces: state.dtm.faces,
+    isopachAt: (e, n) => mesh.sample(e, n)?.value ?? 0,
+    deckZ: (e, n) => tin.sample(e, n),
+    cellSize: SURFACE_CELL_SIZE,
+    overhangOffset,
+    axis: bridgeAxis(),
+    crossSlopeRun: CROSS_SLOPE_RUN,
+  });
+
+  const name = `${state.dtm.name} - Deflected`;
+  const description =
+    overhangOffset === null
+      ? "Top of deck plus girder deflection (isopach)"
+      : `Top of deck plus girder deflection, extended ${overhangOffset} ft beyond the edge of deck at its cross slope`;
+  const xml = BridgeSurfaceExport.toLandXml(surface, { name, description, unitsXml: state.dtmUnitsXml });
+
+  const url = URL.createObjectURL(new Blob([xml], { type: "application/xml" }));
+  triggerDownload(url, "ToD Deflected Surface.xml");
+  logLine(
+    `Export: wrote surface "${name}" to "ToD Deflected Surface.xml" - ${surface.vertices.length} points, ` +
+      `${surface.faces.length} faces (deck densified on a ${SURFACE_CELL_SIZE} ft grid` +
+      (surface.stripFaces ? `, plus ${surface.stripFaces} faces out to the overhang edge).` : ")."),
+  );
+  if (overhangOffset !== null && !surface.stripFaces) {
+    logLine("Export WARNING: no deck side edges were found to extend, so the surface stops at the DTM edge.");
+  }
+  return { surface, xml };
+}
+
 function downloadLog() {
   const blob = new Blob([ui.logOutput.textContent || "No log entries yet."], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -2217,6 +2298,7 @@ document.getElementById("downloadTemplateBtn").addEventListener("click", downloa
 document.getElementById("calculateBtn").addEventListener("click", runCalculation);
 document.getElementById("exportGirderBtn").addEventListener("click", exportTopOfGirderPoints);
 document.getElementById("projectBtn").addEventListener("click", exportTopOfDeckDeflected);
+document.getElementById("exportSurfaceBtn").addEventListener("click", exportDeflectedSurfaceXml);
 document.getElementById("downloadLogBtn").addEventListener("click", downloadLog);
 
 ui.fileInput.addEventListener("change", async () => {

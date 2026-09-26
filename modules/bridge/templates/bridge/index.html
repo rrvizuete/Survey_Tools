@@ -141,20 +141,30 @@
           </div>
 
           <div class="row g-3 align-items-end mb-3">
-            <div class="col-12 col-lg-4">
+            <div class="col-12 col-md-6 col-lg-3">
               <label for="deckSpanSelect" class="form-label">Span</label>
               <select id="deckSpanSelect" class="form-select" disabled>
                 <option value="">(Run calculation first)</option>
               </select>
             </div>
-            <div class="col-12 col-lg-4">
+            <div class="col-12 col-md-6 col-lg-3">
               <label for="deckGirderSelect" class="form-label">Girder</label>
               <select id="deckGirderSelect" class="form-select" disabled>
                 <option value="">(Run calculation first)</option>
               </select>
             </div>
-            <div class="col-12 col-lg-4 d-grid">
+            <div class="col-12 col-md-6 col-lg-3 d-grid">
               <button id="projectBtn" class="btn btn-outline-primary" type="button">Export Top of Deck Deflected Points</button>
+            </div>
+            <div class="col-12 col-md-6 col-lg-3 d-grid">
+              <button
+                id="exportSurfaceBtn"
+                class="btn btn-outline-primary"
+                type="button"
+                title="LandXML TIN of the deflected top of deck, extended to the overhang offset for laying out the screed."
+              >
+                Export Deflected Deck Surface (XML)
+              </button>
             </div>
           </div>
 
@@ -231,5 +241,6 @@
     <script src="{{ url_for('bridge.static', filename='landxml.js') }}"></script>
     <script src="{{ url_for('bridge.static', filename='isopach.js') }}"></script>
     <script src="{{ url_for('bridge.static', filename='alignment.js') }}"></script>
+    <script src="{{ url_for('bridge.static', filename='surface_export.js') }}"></script>
     <script src="{{ url_for('bridge.static', filename='app.js') }}"></script>
 {% endblock %}
