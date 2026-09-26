@@ -870,7 +870,7 @@ function logDeckReferenceStats() {
         "(deck should sit above this by the haunch + slab thickness).",
     );
   }
-  if (isopach) logLine(`QC: isopach applied ranges ${isopach.min.toFixed(3)} to ${isopach.max.toFixed(3)} ft.`);
+  if (isopach) logLine(`QC: deflection applied ranges ${isopach.min.toFixed(3)} to ${isopach.max.toFixed(3)} ft.`);
 
   if (deckZ && girderZ && deckZ.max < girderZ.min) {
     logLine(
@@ -954,7 +954,7 @@ function computeDeflectedDeck() {
   }
 
   if (!mesh.triangleCount) {
-    window.alert("The isopach surface is empty. At least one span needs two or more girders.");
+    window.alert("No deflection surface could be built. At least one span needs two or more girders.");
     return false;
   }
 
@@ -1093,8 +1093,8 @@ function computeDeflectedDeck() {
   }
 
   logLine(
-    `Deflected deck: ${points.length} DTM points - ${inside} inside the isopach surface, ` +
-      `${points.length - inside} outside (isopach held at 0, original elevation kept).`,
+    `Deflected deck: ${points.length} DTM points - ${inside} inside the deflected girder area, ` +
+      `${points.length - inside} outside (no deflection applied, original elevation kept).`,
   );
   if (tin.triangleCount) {
     logLine(
@@ -1306,7 +1306,7 @@ function renderDeflectedDeckChart() {
   if (ui.deckStatus) {
     if (deck) {
       ui.deckStatus.textContent =
-        `${deck.points.length} deflected deck points (${deck.inside} inside the isopach surface, ` +
+        `${deck.points.length} deflected deck points (${deck.inside} inside the deflected girder area, ` +
         `${deck.points.length - deck.inside} keeping their original elevation).` +
         (deck.edgePoints?.length
           ? ` ${deck.edgePoints.length} overhang edge points ${deck.overhangOffset} ft beyond the edge of deck.`
@@ -1314,7 +1314,7 @@ function renderDeflectedDeckChart() {
     } else if (state.dtm) {
       ui.deckStatus.textContent =
         `"${state.dtm.name}" loaded with ${state.dtm.points.length} points. ` +
-        "Choose Compute Deflected Deck to apply the isopach.";
+        "Choose Compute Deflected Deck to apply the girder deflections.";
     } else {
       ui.deckStatus.textContent = "Upload a DTM XML surface and choose Compute Deflected Deck.";
     }
@@ -2075,7 +2075,7 @@ function exportTopOfDeckDeflected() {
     const girderPoints = state.deflectedDeck.girderPoints ?? {};
     const edgePoints = state.deflectedDeck.edgePoints ?? [];
     const rows = [
-      ["N", "E", "Deflected Elevation (ft)", "Description", "Deck Elevation (ft)", "Isopach (ft)", "Note"],
+      ["N", "E", "Deflected Elevation (ft)", "Description", "Deck Elevation (ft)", "Deflection (ft)", "Note"],
     ];
 
     let screedRows = 0;
@@ -2179,7 +2179,7 @@ function exportDeflectedSurfaceXml() {
   const name = `${state.dtm.name} - Deflected`;
   const description =
     overhangOffset === null
-      ? "Top of deck plus girder deflection (isopach)"
+      ? "Top of deck plus girder deflection"
       : `Top of deck plus girder deflection, extended ${overhangOffset} ft beyond the edge of deck at its cross slope`;
   const xml = BridgeSurfaceExport.toLandXml(surface, { name, description, unitsXml: state.dtmUnitsXml });
 

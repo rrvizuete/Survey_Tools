@@ -292,7 +292,7 @@
             <tr>
               <td>Export Top of Deck Deflected Points</td>
               <td class="nowrap"><code>ToD Deflected.xlsx</code></td>
-              <td>N, E, Deflected Elevation, Description, Deck Elevation, Isopach (ft), Note. Deck points directly above
+              <td>N, E, Deflected Elevation, Description, Deck Elevation, Deflection (ft), Note. Deck points directly above
                 the <strong>same left and right positions, with the same names,</strong> as the top-of-girder points. With
                 an overhang offset, <code>OH</code> points follow each span's girders.</td>
             </tr>
@@ -386,8 +386,8 @@ t = 1/2 (midspan, required), 1/4 and 1/3 (optional)</code>
         Girder deflections are joined into a triangulated surface between neighbouring girders at matching intervals
         (the isopach). The deck is then
       </p>
-      <code class="formula">Deflected Z = DTM Z + isopach(N, E)</code>
-      <p>The overhang holds the exterior girder's deflection. Beyond the span ends the isopach is zero.</p>
+      <code class="formula">Deflected Z = DTM Z + deflection(N, E)</code>
+      <p>The overhang holds the exterior girder's deflection. Beyond the span ends the deflection is zero.</p>
 
       <h3>Overhang extension</h3>
       <code class="formula">Z(screed) = Z(edge of deck) + s &middot; offset
