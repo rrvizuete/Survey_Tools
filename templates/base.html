@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
     {% block head_extra %}{% endblock %}
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
     <div class="app-shell">
         <nav class="toolbox-bar">
             <a href="{{ url_for('toolbox.home') }}" class="toolbox-brand">

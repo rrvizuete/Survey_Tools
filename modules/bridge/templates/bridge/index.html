@@ -12,6 +12,8 @@
     <script src="{{ url_for('bridge.static', filename='vendor/xlsx/xlsx.full.min.js') }}"></script>
 {% endblock %}
 
+{% block body_class %}page-wide{% endblock %}
+
 {% block toolbox_nav_extra %}
     <span class="toolbox-current">Bridge Superstructure</span>
 {% endblock %}
