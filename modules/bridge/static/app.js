@@ -1,56 +1,3 @@
-const HELP_TEXT = `1. Data & Calculation Tab:
-   - Download Template to get the input Excel format.
-   - Upload the completed "Girder Data sheet" file.
-   - Review imported rows in the editable grid and adjust values before calculation.
-   - Set "Centerline radius (ft)" per girder: 0 or blank means straight, positive is clockwise, negative is counterclockwise (from Support1 to Support2).
-   - Set the number of intervals and choose Calculate.
-   - Export Top of Girder Points once you are satisfied with the results (a separate
-     step from calculating, so you can re-run the calculation without re-downloading).
-   - The Calculation Log is displayed in this same tab and can be downloaded.
-
-2. Graphs Tab:
-   - Includes synchronized Deflection Profile and Plan View plots.
-   - The plan uses Northing (N) and Easting (E) as coordinates.
-   - Select Span/Girder from the selectors or click a girder in plan view.
-   - Selected girder is highlighted, and the profile updates automatically.
-
-3. Deflected Deck Tab:
-   - Upload the theoretical (undeflected) top-of-deck DTM as a LandXML surface.
-   - Compute Deflected Deck builds an isopach surface from the girder deflections and
-     adds it to each DTM point: Deflected Z = DTM Z + isopach.
-   - Deck overhangs hold the deflection of the exterior girder they cantilever from, so
-     the deck keeps its cross slope across the overhang.
-   - Overhang offset (ft) is the distance from the exterior girder centerline to the line
-     where elevations are needed beyond the deck model (e.g. where the screed sits),
-     measured square to the girder. Past the DTM edge the deck is carried out at its own
-     cross slope (taken from the last 2 ft of the model), and the exterior girder's
-     deflection is added. Leave it blank for no extension.
-   - The plan view shows the deck outline, all girders, and the overhang edges (dashed
-     orange). Pick a Span/Girder to highlight it and label the deflected elevations along
-     it; every point, including the overhang edge points, shows values on hover.
-   - Export Top of Deck Deflected points writes N, E, deflected elevation, description,
-     deck elevation, and the isopach value applied at every girder interval. With an
-     overhang offset it also writes the overhang edge points (description ending in "OH",
-     e.g. A0100OH), noting whether their deck elevation was carried at the cross slope.
-
-4. Alignment Sections (Deflected Deck Tab):
-   - Upload a civil alignment as LandXML (<Alignment> with lines, curves, and spirals).
-     If the file holds several alignments, choose one from the list.
-   - Stations are listed at the Section interval across the bridge. Step through them with
-     the arrows, type any station in "Go to station" (12+34.50 or 1234.50), or click the
-     alignment in the plan view.
-   - Each section is cut square to the alignment. It shows the original DTM surface (blue)
-     and the deflected surface (red), with the girders (dotted) and the overhang edges
-     (dashed orange) marked. Offsets are negative left and positive right of the alignment.
-   - The plan view draws the alignment and the current section line.
-
-5. Notes:
-   - Deflection at midspan is required.
-   - Deflection at quarter-span and third-span are optional.
-   - Ensure all files use the same coordinate system.
-
-For further assistance, please reach out to Rafa Ramirez.`;
-
 const TEMPLATE_HEADERS = [
   "Span number",
   "Girder number",
@@ -78,7 +25,7 @@ const TEMPLATE_HEADERS = [
 // without losing information. Parallel array, same length/order as
 // TEMPLATE_HEADERS (which stays unabbreviated for the downloaded template
 // workbook). The full "0=straight, +CW, -CCW" note is dropped from the
-// on-screen column since it is already covered in the Help modal.
+// on-screen column since it is already covered in the user manual.
 const GRID_HEADER_DISPLAY = [
   { concept: "Span number" },
   { concept: "Girder number" },
@@ -128,7 +75,6 @@ const state = {
 };
 
 const ui = {
-  helpText: document.getElementById("helpText"),
   tabDataBtn: document.getElementById("tabDataBtn"),
   tabGraphsBtn: document.getElementById("tabGraphsBtn"),
   tabExportBtn: document.getElementById("tabExportBtn"),
@@ -435,6 +381,7 @@ function buildGirderPoints(row, intervals) {
   const rows = [];
   const graphPoints = [];
   const planCenterline = [];
+  const planEdges = [];
 
   for (let i = 0; i <= intervals; i += 1) {
     const t = i / intervals;
@@ -473,6 +420,9 @@ function buildGirderPoints(row, intervals) {
     });
 
     planCenterline.push({ n: centerN, e: centerE });
+    // The same left/right edge positions the Top of Girder export uses, so
+    // the deflected deck can be reported directly above them.
+    planEdges.push({ n: leftN, e: leftE, side: "L" }, { n: rightN, e: rightE, side: "R" });
   }
 
   return {
@@ -487,6 +437,7 @@ function buildGirderPoints(row, intervals) {
     centerlineRadius,
     centerlineCurved: centerline.isCurved,
     planCenterline,
+    planEdges,
     rows,
     graphPoints,
   };
@@ -724,6 +675,7 @@ async function loadDtmSurface() {
   if (!file) {
     state.dtm = null;
     state.dtmTin = null;
+    state.dtmBoundary = null;
     state.planRevision += 1;
     ui.dtmUploadStatus.textContent = "";
     refreshSections();
@@ -731,10 +683,15 @@ async function loadDtmSurface() {
     return;
   }
 
-  const { surfaces } = BridgeLandXml.parseLandXml(await readTextFile(file));
+  const text = await readTextFile(file);
+  const { surfaces } = BridgeLandXml.parseLandXml(text);
   const surface = surfaces[0];
   state.dtm = surface;
+  // Reused verbatim in the exported surface so it keeps the source's units.
+  state.dtmUnitsXml = (text.match(/<Units>[\s\S]*?<\/Units>/) || [null])[0];
+  state.dtmFileName = file.name;
   state.dtmTin = BridgeIsopach.buildTinInterpolator(surface.points, surface.faces);
+  state.dtmBoundary = null;
   state.planRevision += 1;
 
   ui.dtmUploadStatus.textContent = `Loaded "${surface.name}" - ${surface.points.length} points, ${surface.faces.length} faces.`;
@@ -771,98 +728,109 @@ function readOverhangOffset() {
 // How much of the deck, inward from the DTM edge, sets the cross slope that
 // is carried out to the overhang (screed) line.
 const CROSS_SLOPE_RUN = 2;
+// Tolerance (ft) when deciding whether a point is within the overhang.
+const OVERHANG_TOLERANCE = 1e-3;
+
+/**
+ * Deck side edges -- the DTM boundary running along the given exterior
+ * girders -- with outward normals. The overhang is measured perpendicular to
+ * these edges, which may curve (they usually follow the alignment) even where
+ * the girders are straight.
+ */
+function deckSidesFor(fascias) {
+  if (!state.dtmBoundary) {
+    state.dtmBoundary = BridgeSurfaceExport.tinBoundary(state.dtm.points, state.dtm.faces);
+  }
+  return BridgeSurfaceExport.deckSideEdges(state.dtmBoundary, fascias);
+}
+
+/**
+ * Deck elevation at a deck-edge point and the cross slope carried out from it
+ * (over the last CROSS_SLOPE_RUN ft of the model, perpendicular to the edge).
+ * `z(d)` gives the deck elevation `d` ft beyond the edge.
+ */
+function deckEdgeProfile(tin, edgePoint) {
+  const nudge = 1e-4; // read just inside the edge, where the TIN is certain to answer
+  // At a deck corner, straight inward runs along the end edge, where the TIN
+  // has no answer; step a hair along the edge (either way) to stay on the deck.
+  const tangent = { e: -edgePoint.normal.n, n: edgePoint.normal.e };
+  const inward = (s) => {
+    for (const t of [0, 0.01, -0.01]) {
+      const z = tin.sample(
+        edgePoint.e - edgePoint.normal.e * s + tangent.e * t,
+        edgePoint.n - edgePoint.normal.n * s + tangent.n * t,
+      );
+      if (z !== null) return z;
+    }
+    return null;
+  };
+  const edgeZ = inward(nudge);
+  if (edgeZ === null) return null;
+  const backZ = inward(CROSS_SLOPE_RUN);
+  const slope = backZ === null ? 0 : (edgeZ - backZ) / (CROSS_SLOPE_RUN - nudge);
+  return { slope, z: (d) => edgeZ + slope * (d + nudge) };
+}
 
 /**
  * Deck elevations out to the overhang (screed) line. Inside the DTM this is
- * the TIN elevation. In the band between an exterior girder and its overhang
- * edge, but past the DTM, the last CROSS_SLOPE_RUN ft of deck is extended
- * square to the girder at its own cross slope, so a surveyor gets prorated
- * elevations where the screed sits beyond the model.
+ * the TIN elevation. Between the deck edge and the screed line -- the
+ * overhang offset beyond the edge, perpendicular to it -- the last
+ * CROSS_SLOPE_RUN ft of deck is carried out at its own cross slope, so a
+ * surveyor gets prorated elevations where the screed sits beyond the model.
  */
 function buildDeckSurface(tin, mesh, overhangOffset) {
-  const bands = [];
-  if (overhangOffset !== null && mesh) {
-    mesh.overhangEdges.forEach((edge) => {
-      const centerline = state.girderGeometry[`${edge.span}||${edge.girder}`]?.planCenterline;
-      if (centerline?.length >= 2) bands.push({ ...edge, centerline });
-    });
-  }
+  const sides = overhangOffset !== null && mesh && tin ? deckSidesFor(mesh.overhangEdges) : null;
+  const active = Boolean(sides?.edges.length);
 
-  /** Foot on the fascia girder and outward distance, if the point is in an overhang band. */
+  /** Deck-edge point and distance beyond it, if the point is in the overhang. */
   function locate(e, n) {
-    let best = null;
-    bands.forEach((band) => {
-      const { centerline, points: edgePoints } = band;
-      for (let i = 0; i + 1 < centerline.length; i += 1) {
-        const a = centerline[i];
-        const b = centerline[i + 1];
-        const dE = b.e - a.e;
-        const dN = b.n - a.n;
-        const lengthSq = dE * dE + dN * dN;
-        if (lengthSq < 1e-12) continue;
-        const u = ((e - a.e) * dE + (n - a.n) * dN) / lengthSq;
-        if (u < -1e-9 || u > 1 + 1e-9) continue;
-
-        const foot = { e: a.e + u * dE, n: a.n + u * dN };
-        // Outward direction, interpolated from the overhang edge rows.
-        let outE = (1 - u) * (edgePoints[i].e - a.e) + u * (edgePoints[i + 1].e - b.e);
-        let outN = (1 - u) * (edgePoints[i].n - a.n) + u * (edgePoints[i + 1].n - b.n);
-        const outLength = Math.hypot(outE, outN);
-        if (outLength < 1e-9) continue;
-        outE /= outLength;
-        outN /= outLength;
-
-        const along = (e - foot.e) * outE + (n - foot.n) * outN;
-        if (along <= 0 || along > overhangOffset + 1e-6) continue;
-        if (!best || along < best.along) best = { foot, outE, outN, along, band };
-      }
-    });
-    return best;
+    const edge = BridgeSurfaceExport.closestOnDeckEdge(sides, e, n);
+    if (!edge) return null;
+    const dE = e - edge.e;
+    const dN = n - edge.n;
+    const along = dE * edge.normal.e + dN * edge.normal.n;
+    const lateral = Math.abs(dE * edge.normal.n - dN * edge.normal.e);
+    if (along <= 0 || along > overhangOffset + OVERHANG_TOLERANCE) return null;
+    // Past the end of a deck side (e.g. beyond the abutment corner) the
+    // closest edge point is the corner, off to one side: not overhang.
+    if (lateral > OVERHANG_TOLERANCE + 0.05 * along) return null;
+    return { edge, along };
   }
 
-  function extendedZ(hit) {
-    const at = (s) => tin.sample(hit.foot.e + hit.outE * s, hit.foot.n + hit.outN * s);
-    if (at(0) === null) return null;
-
-    // Bisect for the DTM edge between the girder (inside) and the point (outside).
-    let inside = 0;
-    let outside = hit.along;
-    for (let i = 0; i < 40 && outside - inside > 1e-6; i += 1) {
-      const middle = (inside + outside) / 2;
-      if (at(middle) === null) outside = middle;
-      else inside = middle;
-    }
-
-    const edgeZ = at(inside);
-    const back = Math.max(0, inside - CROSS_SLOPE_RUN);
-    const backZ = at(back);
-    const slope = backZ !== null && inside - back > 0.05 ? (edgeZ - backZ) / (inside - back) : 0;
-    return { z: edgeZ + slope * (hit.along - inside), crossSlope: slope, dtmEdge: inside };
-  }
+  /** The overhang carries the deflection it has at the deck edge (the fascia girder's). */
+  const edgeMeshPoint = (edge) => ({ e: edge.e - edge.normal.e * 1e-4, n: edge.n - edge.normal.n * 1e-4 });
 
   return {
-    extends: bands.length > 0,
+    extends: active,
+    sides,
     /** True where the deck exists only because of the overhang extension. */
     inOverhangBand(e, n) {
-      return bands.length > 0 && locate(e, n) !== null;
+      return active && (!tin || tin.sample(e, n) === null) && locate(e, n) !== null;
     },
-    /** {z, extended, crossSlope} or null where there is no deck. */
+    /** Deflection to apply at a plan position, including across the overhang. */
+    isopachAt(e, n) {
+      const hit = mesh?.sample(e, n);
+      if (hit) return hit.value;
+      if (!active) return 0;
+      const band = locate(e, n);
+      if (!band) return 0;
+      const point = edgeMeshPoint(band.edge);
+      return mesh.sample(point.e, point.n)?.value ?? 0;
+    },
+    /** {z, extended, crossSlope, meshPoint?} or null where there is no deck. */
     sample(e, n) {
       const z = tin ? tin.sample(e, n) : null;
       if (z !== null) return { z, extended: false, crossSlope: null };
-      if (!bands.length || !tin) return null;
+      if (!active) return null;
       const hit = locate(e, n);
       if (!hit) return null;
-      const result = extendedZ(hit);
-      if (!result) return null;
-      // A point sitting right on the screed line is on the mesh boundary,
-      // where sampling can miss by rounding; nudge inward to read it.
-      const inward = Math.max(0, hit.along - 1e-4);
+      const profile = deckEdgeProfile(tin, hit.edge);
+      if (!profile) return null;
       return {
-        z: result.z,
+        z: profile.z(hit.along),
         extended: true,
-        crossSlope: result.crossSlope,
-        meshPoint: { e: hit.foot.e + hit.outE * inward, n: hit.foot.n + hit.outN * inward },
+        crossSlope: profile.slope,
+        meshPoint: edgeMeshPoint(hit.edge),
       };
     },
   };
@@ -930,18 +898,60 @@ function computeDeflectedDeck() {
     return false;
   }
 
+  // The overhang offset is measured perpendicular to the edge of deck (where
+  // the DTM ends), which may curve while the girders are straight. For each
+  // exterior girder interval, take the nearest point on its deck edge and go
+  // out the offset along that edge's outward normal.
+  const edgeRanges = [];
+  const screedGeometry = new Map();
+  const overhangPoints =
+    overhangOffset === null
+      ? undefined
+      : ({ span, girder, points, normals }) => {
+          const sides = deckSidesFor([{ fascia: points, outward: normals }]);
+          if (!sides.edges.length) {
+            logLine(
+              `Overhang WARNING: Span ${span}, Girder ${girder}: no deck edge was found alongside this exterior ` +
+                "girder, so the overhang offset is measured from the girder centerline instead.",
+            );
+            return points.map((point, index) => ({
+              e: point.e + normals[index].e * overhangOffset,
+              n: point.n + normals[index].n * overhangOffset,
+            }));
+          }
+          const edges = points.map((point) => BridgeSurfaceExport.closestOnDeckEdge(sides, point.e, point.n));
+          screedGeometry.set(`${span}||${girder}`, edges);
+          const toEdge = edges.map((edge) => edge.distance);
+          edgeRanges.push({ span, girder, min: Math.min(...toEdge), max: Math.max(...toEdge) });
+          return edges.map((edge) => ({
+            e: edge.e + edge.normal.e * overhangOffset,
+            n: edge.n + edge.normal.n * overhangOffset,
+          }));
+        };
+
   const mesh = BridgeIsopach.buildIsopachMesh({
     spanToGirders: state.spanToGirders,
     girderGeometry: state.girderGeometry,
     profiles: state.profiles,
     overhangOffset,
+    overhangPoints,
   });
   mesh.warnings.forEach((warning) => logLine(`Isopach WARNING: ${warning}`));
-  logLine(
-    overhangOffset === null
-      ? "Isopach: no overhang offset given; the deck is not extended past the DTM."
-      : `Isopach: overhang edge set ${overhangOffset.toFixed(3)} ft outside the exterior girder centerlines.`,
-  );
+  if (overhangOffset === null) {
+    logLine("Isopach: no overhang offset given; the deck is not extended past the DTM.");
+  } else {
+    logLine(
+      `Isopach: overhang edge set ${overhangOffset.toFixed(3)} ft beyond the edge of deck (DTM edge), ` +
+        "measured perpendicular to the deck edge.",
+    );
+    edgeRanges.forEach((range) => {
+      logLine(
+        `Overhang: Span ${range.span}, Girder ${range.girder}: edge of deck ${range.min.toFixed(3)}` +
+          (range.max - range.min > 0.001 ? ` to ${range.max.toFixed(3)}` : "") +
+          " ft from the girder centerline.",
+      );
+    });
+  }
 
   if (!mesh.triangleCount) {
     window.alert("The isopach surface is empty. At least one span needs two or more girders.");
@@ -986,8 +996,9 @@ function computeDeflectedDeck() {
 
   // A deck DTM is often built from a few longitudinal feature lines (edges and
   // PGL), so it may have no vertex anywhere near an interior girder. Sample the
-  // deflected surface along every girder centerline instead, so each girder has
-  // elevations to report regardless of where the DTM happens to place vertices.
+  // deflected surface directly above the girder's left and right edges instead
+  // -- the same plan positions and names as the Top of Girder export -- so each
+  // girder has elevations to report regardless of where the DTM places vertices.
   const tin = state.dtmTin;
   const girderPoints = {};
   let sampledGirders = 0;
@@ -995,11 +1006,12 @@ function computeDeflectedDeck() {
   sortedSpans().forEach((span) => {
     sortedGirders(span).forEach((girder) => {
       const key = `${span}||${girder}`;
-      const centerline = state.girderGeometry[key]?.planCenterline;
-      if (!centerline?.length) return;
+      const edges = state.girderGeometry[key]?.planEdges;
+      if (!edges?.length) return;
 
       const sampled = [];
-      centerline.forEach((point, interval) => {
+      edges.forEach((point, index) => {
+        const interval = Math.floor(index / 2);
         const deckZ = tin.sample(point.e, point.n);
         if (deckZ === null) return;
         const hit = mesh.sample(point.e, point.n);
@@ -1008,6 +1020,8 @@ function computeDeflectedDeck() {
           e: point.e,
           n: point.n,
           interval,
+          side: point.side,
+          code: `${formatSpan(span)}${formatGirder(girder)}${formatInterval(interval)}${point.side}`,
           originalZ: deckZ,
           isopach,
           deflectedZ: deckZ + isopach,
@@ -1028,10 +1042,19 @@ function computeDeflectedDeck() {
   let extendedEdgePoints = 0;
   if (deckSurface.extends) {
     mesh.overhangEdges.forEach((edge) => {
-      const profile = state.profiles[`${edge.span}||${edge.girder}`] ?? [];
+      const key = `${edge.span}||${edge.girder}`;
+      const profile = state.profiles[key] ?? [];
+      const deckEdges = screedGeometry.get(key);
       edge.points.forEach((point, interval) => {
-        const deck = deckSurface.sample(point.e, point.n);
-        if (!deck || !profile[interval]) return;
+        if (!profile[interval]) return;
+        // Carry the deck out from the deck-edge point this screed point was
+        // placed from; without one (no deck edge found) fall back to sampling.
+        const deckEdge = deckEdges?.[interval];
+        const edgeProfile = deckEdge ? deckEdgeProfile(tin, deckEdge) : null;
+        const deck = edgeProfile
+          ? { z: edgeProfile.z(overhangOffset), extended: true, crossSlope: edgeProfile.slope }
+          : deckSurface.sample(point.e, point.n);
+        if (!deck) return;
         // The overhang row carries the fascia value by construction; read it
         // from the profile rather than sampling right on the mesh boundary.
         const isopach = profile[interval].deflectionIn / 12;
@@ -1074,7 +1097,10 @@ function computeDeflectedDeck() {
       `${points.length - inside} outside (isopach held at 0, original elevation kept).`,
   );
   if (tin.triangleCount) {
-    logLine(`Deflected deck: sampled deck elevations along ${sampledGirders} girder centerlines for the plan view.`);
+    logLine(
+      `Deflected deck: sampled deck elevations above the left and right edges of ${sampledGirders} girders ` +
+        "(same positions and names as the Top of Girder points).",
+    );
   } else {
     logLine(
       "Deflected deck NOTE: the DTM has no TIN faces, so deck elevations could not be sampled along the " +
@@ -1128,6 +1154,7 @@ function buildIsopachHeatmap(rings) {
   const z = ys.map((n) =>
     xs.map((e) => {
       if (!BridgeIsopach.pointInRings(e, n, rings) && !(extendsDeck && surface.inOverhangBand(e, n))) return null;
+      if (extendsDeck) return surface.isopachAt(e, n);
       const hit = mesh.sample(e, n);
       return hit ? hit.value : 0;
     }),
@@ -1255,18 +1282,15 @@ function renderDeflectedDeckChart() {
         y: selectedPoints.map((point) => point.n),
         mode: "markers+text",
         marker: { size: 9, color: "#d63384", line: { width: 1, color: "#fff" } },
-        // Label with the point code used in the export, so a point on the plan
-        // can be matched to its exported row.
-        text: selectedPoints.map(
-          (point) =>
-            `${formatSpan(selectedSpan)}${formatGirder(selectedGirder)}${formatInterval(point.interval)}`,
-        ),
-        textposition: "top center",
+        // Label with the point code used in the export (…L / …R, as in the Top
+        // of Girder export), so a point on the plan can be matched to its row.
+        // Left labels go above and right labels below so the pairs stay legible.
+        text: selectedPoints.map((point) => point.code),
+        textposition: selectedPoints.map((point) => (point.side === "L" ? "top center" : "bottom center")),
         textfont: { size: 10, color: "#212529" },
         name: `Span ${selectedSpan} - Girder ${selectedGirder}`,
-        customdata: selectedPoints.map(toCustomdata),
-        hovertemplate:
-          "Interval %{pointNumber}<br>" + hover.replace("<extra></extra>", "") + "<extra></extra>",
+        customdata: selectedPoints.map((point) => [...toCustomdata(point), point.code]),
+        hovertemplate: "<b>%{customdata[3]}</b><br>" + hover,
       });
     }
   }
@@ -1285,7 +1309,7 @@ function renderDeflectedDeckChart() {
         `${deck.points.length} deflected deck points (${deck.inside} inside the isopach surface, ` +
         `${deck.points.length - deck.inside} keeping their original elevation).` +
         (deck.edgePoints?.length
-          ? ` ${deck.edgePoints.length} overhang edge points ${deck.overhangOffset} ft outside the exterior girders.`
+          ? ` ${deck.edgePoints.length} overhang edge points ${deck.overhangOffset} ft beyond the edge of deck.`
           : "");
     } else if (state.dtm) {
       ui.deckStatus.textContent =
@@ -2000,6 +2024,7 @@ function runCalculation() {
         support2N: result.support2N,
         support2E: result.support2E,
         planCenterline: result.planCenterline,
+        planEdges: result.planEdges,
       };
 
       if (!state.spanToGirders[result.spanDisplay]) {
@@ -2061,7 +2086,7 @@ function exportTopOfDeckDeflected() {
             point.n,
             point.e,
             point.deflectedZ,
-            `${formatSpan(span)}${formatGirder(girder)}${formatInterval(point.interval)}`,
+            point.code,
             point.originalZ,
             point.isopach,
             "",
@@ -2117,13 +2142,66 @@ function exportTopOfDeckDeflected() {
   );
 }
 
+// Plan grid (ft) used to densify the deck TIN so the deflection curve is
+// captured between the DTM's own vertices.
+const SURFACE_CELL_SIZE = 5;
+
+function exportDeflectedSurfaceXml() {
+  if (!state.topOfGirderPoints.length) {
+    window.alert("Please calculate the top-of-girder points first (Girder Calcs tab).");
+    return;
+  }
+  if (!state.dtm) {
+    window.alert("Please upload the top-of-deck DTM XML surface first.");
+    return;
+  }
+  if (!state.deflectedDeck && !computeDeflectedDeck()) return;
+  if (!state.dtm.faces.length) {
+    window.alert("The DTM has no TIN faces, so a deflected surface cannot be built from it.");
+    return;
+  }
+
+  const mesh = state.isopachMesh;
+  const tin = state.dtmTin;
+  const overhangOffset = state.deflectedDeck.overhangOffset;
+  const surface = BridgeSurfaceExport.buildDeflectedSurface({
+    points: state.dtm.points,
+    faces: state.dtm.faces,
+    isopachAt: (e, n) => mesh.sample(e, n)?.value ?? 0,
+    deckZ: (e, n) => tin.sample(e, n),
+    cellSize: SURFACE_CELL_SIZE,
+    overhangOffset,
+    // The exterior girders, so the deck's side edges can be found locally.
+    fascias: mesh.overhangEdges,
+    crossSlopeRun: CROSS_SLOPE_RUN,
+  });
+
+  const name = `${state.dtm.name} - Deflected`;
+  const description =
+    overhangOffset === null
+      ? "Top of deck plus girder deflection (isopach)"
+      : `Top of deck plus girder deflection, extended ${overhangOffset} ft beyond the edge of deck at its cross slope`;
+  const xml = BridgeSurfaceExport.toLandXml(surface, { name, description, unitsXml: state.dtmUnitsXml });
+
+  const url = URL.createObjectURL(new Blob([xml], { type: "application/xml" }));
+  triggerDownload(url, "ToD Deflected Surface.xml");
+  logLine(
+    `Export: wrote surface "${name}" to "ToD Deflected Surface.xml" - ${surface.vertices.length} points, ` +
+      `${surface.faces.length} faces (deck densified on a ${SURFACE_CELL_SIZE} ft grid` +
+      (surface.stripFaces ? `, plus ${surface.stripFaces} faces out to the overhang edge).` : ")."),
+  );
+  if (overhangOffset !== null && !surface.stripFaces) {
+    logLine("Export WARNING: no deck side edges were found to extend, so the surface stops at the DTM edge.");
+  }
+  return { surface, xml };
+}
+
 function downloadLog() {
   const blob = new Blob([ui.logOutput.textContent || "No log entries yet."], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   triggerDownload(url, "Log.txt");
 }
 
-ui.helpText.textContent = HELP_TEXT;
 renderSourceGrid();
 
 ui.tabDataBtn.addEventListener("click", () => activateTab("data"));
@@ -2134,6 +2212,7 @@ document.getElementById("downloadTemplateBtn").addEventListener("click", downloa
 document.getElementById("calculateBtn").addEventListener("click", runCalculation);
 document.getElementById("exportGirderBtn").addEventListener("click", exportTopOfGirderPoints);
 document.getElementById("projectBtn").addEventListener("click", exportTopOfDeckDeflected);
+document.getElementById("exportSurfaceBtn").addEventListener("click", exportDeflectedSurfaceXml);
 document.getElementById("downloadLogBtn").addEventListener("click", downloadLog);
 
 ui.fileInput.addEventListener("change", async () => {
@@ -2152,6 +2231,7 @@ ui.dtmFileInput.addEventListener("change", async () => {
   } catch (error) {
     state.dtm = null;
     state.dtmTin = null;
+    state.dtmBoundary = null;
     state.deflectedDeck = null;
     ui.dtmUploadStatus.textContent = `Error loading DTM: ${error.message}`;
     logLine(`DTM ERROR: ${error.message}`);

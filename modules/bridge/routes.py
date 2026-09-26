@@ -27,6 +27,11 @@ def index():
     return render_template("bridge/index.html")
 
 
+@bridge_bp.route("/manual")
+def manual():
+    return render_template("bridge/manual.html")
+
+
 @bridge_bp.route("/api/health")
 def health():
     return jsonify({"status": "ok"})
