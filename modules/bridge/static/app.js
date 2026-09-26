@@ -1841,11 +1841,13 @@ function renderSectionChart() {
       hovermode: "closest",
       shapes,
       annotations,
-      margin: { t: 90, r: 25, b: 110, l: 80 },
+      margin: { t: 90, r: 25, b: 120, l: 80 },
       paper_bgcolor: "#fcfdff",
       plot_bgcolor: "#fcfdff",
       showlegend: true,
-      legend: { orientation: "h", x: 0, y: -0.2, yanchor: "top" },
+      // Pinned to the bottom of the chart (not a fraction of the plot height),
+      // so it stays clear of the axis title however short the chart is.
+      legend: { orientation: "h", x: 0, xref: "container", y: 0, yref: "container", yanchor: "bottom" },
     },
     PLOTLY_CONFIG,
   );

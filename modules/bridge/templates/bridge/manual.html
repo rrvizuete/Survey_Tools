@@ -77,7 +77,7 @@
             <tr>
               <td>Girder data sheet</td>
               <td class="nowrap">Excel (.xlsx / .xls)</td>
-              <td>Girder geometry, supports, and deflections. Start from <span class="ui">Download Template</span>.</td>
+              <td>Girder geometry, supports, and deflections. Start from <span class="ui">Download template</span>.</td>
               <td><span class="tag tag-required">Required</span></td>
             </tr>
             <tr>
@@ -105,13 +105,13 @@
     <section class="manual-section" id="girder-calcs">
       <h2><span class="num">3</span> Girder Calcs tab</h2>
       <ol>
-        <li>Choose <span class="ui">Download Template</span> and fill in one row per girder per span.</li>
-        <li>Upload the completed sheet under <span class="ui">Girder Data Sheet</span>. The rows appear in an editable grid;
+        <li>Choose <span class="ui">Download template</span> and fill in one row per girder per span.</li>
+        <li>Upload the completed sheet under <span class="ui">Girder data sheet</span>. The rows appear in an editable grid;
           you can correct values there before calculating.</li>
         <li>Set <span class="ui">Intervals</span> (1&ndash;250): the number of equal divisions along each girder. Points are
           produced at every division, so 10 intervals gives 11 stations per girder (00&ndash;10).</li>
         <li>Choose <span class="ui">Calculate</span>, review the <em>Calculation Log</em>, then
-          <span class="ui">Export Top of Girder Points</span>. Exporting is a separate step, so you can recalculate
+          <span class="ui">Export &rsaquo; Top of girder</span>. Exporting is a separate step, so you can recalculate
           without downloading each time.</li>
       </ol>
 
@@ -155,9 +155,9 @@
       <h2><span class="num">5</span> Deflected Deck tab</h2>
       <ol>
         <li>Run the calculation on the Girder Calcs tab first.</li>
-        <li>Upload the <span class="ui">Top of Deck DTM</span>. The status line confirms the point and face count.</li>
-        <li>Optionally enter an <span class="ui">Overhang offset (ft)</span> &ndash; see <a href="#overhang">Overhang &amp; screed</a>.</li>
-        <li>Choose <span class="ui">Compute Deflected Deck</span>.</li>
+        <li>Upload the <span class="ui">Top of deck DTM</span>. The status line confirms the point and face count.</li>
+        <li>Optionally enter an <span class="ui">Overhang (ft)</span> &ndash; see <a href="#overhang">Overhang &amp; screed</a>.</li>
+        <li>Choose <span class="ui">Compute deck</span>.</li>
       </ol>
       <p>
         The tool builds a deflection (isopach) surface between the girders and adds it to the deck:
@@ -178,7 +178,7 @@
       <h2><span class="num">6</span> Overhang &amp; screed</h2>
       <p>
         The deck model usually stops at the edge of deck, but the screed rails sit beyond it. The
-        <span class="ui">Overhang offset</span> extends the deflected deck past the model so elevations can be
+        <span class="ui">Overhang</span> extends the deflected deck past the model so elevations can be
         given where the screed runs.
       </p>
       <ul>
@@ -254,13 +254,13 @@
     <section class="manual-section" id="sections">
       <h2><span class="num">7</span> Alignment sections</h2>
       <ol>
-        <li>On the Deflected Deck tab, upload a <span class="ui">Civil Alignment (LandXML)</span>. Lines, curves, and
+        <li>On the Deflected Deck tab, upload a <span class="ui">Civil alignment (LandXML)</span>. Lines, curves, and
           clothoid spirals are supported.</li>
         <li>If the file holds several alignments, choose one from <span class="ui">Alignment</span>. The one running
           closest to the bridge is selected automatically.</li>
-        <li>Stations across the bridge are listed at the <span class="ui">Section interval</span>. Step through them with
-          the arrows, type one in <span class="ui">Go to station</span> (<code>12+34.50</code> or <code>1234.50</code>),
-          or click the alignment in the plan view.</li>
+        <li>Stations across the bridge are listed every <span class="ui">Interval (ft)</span>. Step through them with
+          the arrows, type one in the <em>Go to station</em> box and choose <span class="ui">Go</span>
+          (<code>12+34.50</code> or <code>1234.50</code>), or click the alignment in the plan view.</li>
       </ol>
       <p>Each section is cut square to the alignment and shows:</p>
       <ul>
@@ -284,26 +284,26 @@
           <thead><tr><th>Button</th><th>File</th><th>Contents</th></tr></thead>
           <tbody>
             <tr>
-              <td>Export Top of Girder Points</td>
+              <td>Girder Calcs &rsaquo; Export &rsaquo; <strong>Top of girder</strong></td>
               <td class="nowrap"><code>Top of girder.xlsx</code></td>
               <td>N, E, Elevation, Description, Deflection (ft), Camber (ft). Two points per interval: the left and right
                 edges of the girder top.</td>
             </tr>
             <tr>
-              <td>Export Top of Deck Deflected Points</td>
+              <td>Deflected Deck &rsaquo; Export deflected deck &rsaquo; <strong>Points</strong></td>
               <td class="nowrap"><code>ToD Deflected.xlsx</code></td>
               <td>N, E, Deflected Elevation, Description, Deck Elevation, Deflection (ft), Note. Deck points directly above
                 the <strong>same left and right positions, with the same names,</strong> as the top-of-girder points. With
                 an overhang offset, <code>OH</code> points follow each span's girders.</td>
             </tr>
             <tr>
-              <td>Export Deflected Deck Surface (XML)</td>
+              <td>Deflected Deck &rsaquo; Export deflected deck &rsaquo; <strong>Surface (XML)</strong></td>
               <td class="nowrap"><code>ToD Deflected Surface.xml</code></td>
               <td>LandXML TIN of the deflected deck, extended to the overhang offset, for laying out the screed. Keeps the
                 DTM's units.</td>
             </tr>
             <tr>
-              <td>Download Log File</td>
+              <td>Girder Calcs &rsaquo; Export &rsaquo; <strong>Log file</strong></td>
               <td class="nowrap"><code>Log.txt</code></td>
               <td>The calculation log, including QC checks and warnings.</td>
             </tr>
