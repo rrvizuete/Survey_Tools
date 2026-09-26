@@ -614,12 +614,57 @@ function renderProfileChart() {
   enableZoomWindow(ui.profileChart);
 }
 
-function getPowerOfTenTickStep(minValue, maxValue) {
-  const range = Math.max(0, Math.abs(maxValue - minValue));
-  if (range <= 0) return 1;
-  const approx = range / 8;
-  const exponent = Math.round(Math.log10(Math.max(1, approx)));
-  return 10 ** exponent;
+// Target size (px) of a plan-view grid cell on screen.
+const PLAN_GRID_PX = 80;
+
+/** The 1, 2 or 5 x 10^n step nearest above `target`. */
+function niceStep(target) {
+  if (!(target > 0)) return 1;
+  const power = 10 ** Math.floor(Math.log10(target));
+  const scaled = target / power;
+  return (scaled <= 1 ? 1 : scaled <= 2 ? 2 : scaled <= 5 ? 5 : 10) * power;
+}
+
+/**
+ * Plan views keep true proportions (1 ft north = 1 ft east on screen), so the
+ * same grid step on both axes gives square cells. The step is picked from the
+ * visible area -- about PLAN_GRID_PX per cell -- so the grid stays square and
+ * readable at any zoom.
+ */
+function fitSquareGrid(gd) {
+  const xa = gd._fullLayout?.xaxis;
+  const ya = gd._fullLayout?.yaxis;
+  if (!xa?._length || !ya?._length) return;
+  const ftPerPx = Math.max(
+    Math.abs(xa.range[1] - xa.range[0]) / xa._length,
+    Math.abs(ya.range[1] - ya.range[0]) / ya._length,
+  );
+  const step = niceStep(ftPerPx * PLAN_GRID_PX);
+  if (xa.dtick === step && ya.dtick === step) return;
+  const decimals = step >= 1 ? 0 : Math.ceil(-Math.log10(step) - 1e-9);
+  const format = `.${decimals}f`;
+  Plotly.relayout(gd, {
+    "xaxis.dtick": step,
+    "yaxis.dtick": step,
+    "xaxis.tick0": 0,
+    "yaxis.tick0": 0,
+    "xaxis.tickformat": format,
+    "yaxis.tickformat": format,
+  });
+}
+
+/** Keeps a plan view's grid square after every render, zoom, pan, or resize. */
+function enableSquareGrid(gd) {
+  fitSquareGrid(gd);
+  const refit = (update) => {
+    if (update && "xaxis.dtick" in update) return; // our own relayout
+    fitSquareGrid(gd);
+  };
+  // The zoom window applies its box with Plotly.update, which reports
+  // plotly_update rather than plotly_relayout.
+  gd.on("plotly_relayout", refit);
+  gd.removeAllListeners?.("plotly_update");
+  gd.on("plotly_update", () => fitSquareGrid(gd));
 }
 
 function renderPlanChart() {
@@ -662,29 +707,19 @@ function renderPlanChart() {
       title: "<b>Plan View for All Spans (N/E)</b>",
       xaxis: {
         title: { text: "Easting (ft)", standoff: 34 },
-        dtick: getPowerOfTenTickStep(
-          Math.min(...traces.flatMap((t) => t.x)),
-          Math.max(...traces.flatMap((t) => t.x)),
-        ),
         tickformat: ".0f",
         exponentformat: "none",
         showexponent: "none",
         tickangle: -45,
-        nticks: 10,
         automargin: true,
       },
       yaxis: {
         title: { text: "Northing (ft)", standoff: 14 },
         scaleanchor: "x",
         scaleratio: 1,
-        dtick: getPowerOfTenTickStep(
-          Math.min(...traces.flatMap((t) => t.y)),
-          Math.max(...traces.flatMap((t) => t.y)),
-        ),
         tickformat: ".0f",
         exponentformat: "none",
         showexponent: "none",
-        nticks: 10,
         automargin: true,
       },
       margin: { t: 60, r: 25, b: 115, l: 95 },
@@ -695,6 +730,7 @@ function renderPlanChart() {
     PLOTLY_CONFIG,
   );
   enableZoomWindow(ui.planChart);
+  enableSquareGrid(ui.planChart);
 }
 
 
@@ -1383,22 +1419,6 @@ function renderDeflectedDeckChart() {
     }
   }
 
-  // Spreading into Math.min/max would overflow the argument limit on a large deck.
-  const boundsOfTraces = (axis) => {
-    let min = Infinity;
-    let max = -Infinity;
-    traces.forEach((trace) => {
-      const values = trace[axis];
-      for (let i = 0; i < values.length; i += 1) {
-        if (values[i] < min) min = values[i];
-        if (values[i] > max) max = values[i];
-      }
-    });
-    return { min, max };
-  };
-  const xBounds = boundsOfTraces("x");
-  const yBounds = boundsOfTraces("y");
-
   Plotly.react(
     ui.deckChart,
     traces,
@@ -1408,23 +1428,19 @@ function renderDeflectedDeckChart() {
       title: "<b>Deflected Deck - Plan View (N/E)</b>",
       xaxis: {
         title: { text: "Easting (ft)", standoff: 34 },
-        dtick: getPowerOfTenTickStep(xBounds.min, xBounds.max),
         tickformat: ".0f",
         exponentformat: "none",
         showexponent: "none",
         tickangle: -45,
-        nticks: 10,
         automargin: true,
       },
       yaxis: {
         title: { text: "Northing (ft)", standoff: 14 },
         scaleanchor: "x",
         scaleratio: 1,
-        dtick: getPowerOfTenTickStep(yBounds.min, yBounds.max),
         tickformat: ".0f",
         exponentformat: "none",
         showexponent: "none",
-        nticks: 10,
         automargin: true,
       },
       margin: { t: 60, r: 25, b: 115, l: 95 },
@@ -1435,6 +1451,7 @@ function renderDeflectedDeckChart() {
     PLOTLY_CONFIG,
   );
   enableZoomWindow(ui.deckChart);
+  enableSquareGrid(ui.deckChart);
 }
 
 // ---------------------------------------------------------------------------
