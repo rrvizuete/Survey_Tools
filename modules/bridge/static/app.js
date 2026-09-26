@@ -1840,9 +1840,20 @@ function alignmentPlanTraces() {
 
   const range = bridgeStationRange(alignment);
   const margin = range.fromBridge ? Math.max(20, (range.max - range.min) * 0.1) : 0;
-  const shown = alignment.polyline.filter(
-    (point) => point.station >= range.min - margin && point.station <= range.max + margin,
-  );
+  const from = Math.max(alignment.staStart, range.min - margin);
+  const to = Math.min(alignment.staEnd, range.max + margin);
+
+  // Sample the exact geometry across the clipped range rather than filtering
+  // the densified vertices: a long straight <Line> has only its two end
+  // vertices, which both fall outside the range when it runs past the bridge.
+  // Regular samples also give every point a station to click on.
+  const count = Math.max(2, Math.min(1000, Math.ceil((to - from) / 2) + 1));
+  const shown = [];
+  for (let i = 0; i < count && to > from; i += 1) {
+    const station = from + ((to - from) * i) / (count - 1);
+    const frame = alignment.pointAt(station);
+    shown.push({ e: frame.e, n: frame.n, station });
+  }
   const traces = [];
   if (shown.length >= 2) {
     traces.push({
