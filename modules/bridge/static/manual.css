@@ -423,12 +423,12 @@
 
 .figure-label {
   fill: var(--m-ink);
-  font: 600 13px Inter, "Segoe UI", sans-serif;
+  font: 600 13px var(--font-sans);
 }
 
 .figure-note {
   fill: var(--m-muted);
-  font: 12px Inter, "Segoe UI", sans-serif;
+  font: 12px var(--font-sans);
 }
 
 /* ---------- Point code anatomy ---------- */
@@ -452,7 +452,8 @@
 .code-part b {
   display: block;
   color: var(--m-navy-2);
-  font: 700 22px ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font: 700 22px var(--font-sans);
+  font-variant-numeric: tabular-nums;
 }
 
 .code-part span {
@@ -471,7 +472,8 @@
   border-radius: 8px;
   background: #f7f9fb;
   color: var(--m-navy-2);
-  font: 14px/1.7 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font: 14px/1.7 var(--font-sans);
+  font-variant-numeric: tabular-nums;
   white-space: pre-wrap;
 }
 

@@ -1,5 +1,10 @@
 :root {
   --muted: #5a6b7d;
+  /* Bootstrap sets its own font stacks; point them at the app-wide Inter
+     (--font-sans / --font-mono come from base.html). */
+  --bs-font-sans-serif: var(--font-sans);
+  --bs-font-monospace: var(--font-mono);
+  --bs-body-font-family: var(--font-sans);
 }
 
 /* Named .bridge-panel, not .app-shell, to avoid colliding with the shared

@@ -51,6 +51,9 @@ const GRID_HEADER_DISPLAY = [
 // Shared across every Plotly chart so the modebar (zoom/pan/reset/download)
 // behaves identically everywhere.
 const PLOTLY_CONFIG = { responsive: true, displaylogo: false };
+// Plotly draws with its own default font unless told otherwise; use the
+// app-wide Inter. Annotation and trace text inherit it.
+const PLOTLY_FONT = { family: "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" };
 
 const state = {
   sourceRows: [],
@@ -541,6 +544,7 @@ function renderProfileChart() {
       },
     ],
     {
+      font: PLOTLY_FONT,
       title: `<b>Span ${span} — Girder ${girder}</b>`,
       xaxis: { title: "Length along girder (ft)", zeroline: false },
       yaxis: { title: "Deflection (in)" },
@@ -597,6 +601,7 @@ function renderPlanChart() {
     ui.planChart,
     traces,
     {
+      font: PLOTLY_FONT,
       title: "<b>Plan View for All Spans (N/E)</b>",
       xaxis: {
         title: { text: "Easting (ft)", standoff: 34 },
@@ -1340,6 +1345,7 @@ function renderDeflectedDeckChart() {
     ui.deckChart,
     traces,
     {
+      font: PLOTLY_FONT,
       uirevision: state.planRevision,
       title: "<b>Deflected Deck - Plan View (N/E)</b>",
       xaxis: {
@@ -1824,6 +1830,7 @@ function renderSectionChart() {
     ui.sectionChart,
     traces,
     {
+      font: PLOTLY_FONT,
       title: { text: `<b>Section at Sta ${stationText}</b> - ${state.alignment.name}`, y: 0.97 },
       xaxis: {
         title: { text: "Offset from alignment (ft) - left negative, right positive" },

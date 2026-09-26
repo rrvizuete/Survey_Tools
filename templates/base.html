@@ -4,7 +4,19 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{% block title %}Survey Toolbox{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..800&display=swap">
     <link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
+    <style>
+        /* Inter (Google Fonts) everywhere, including code/pre text, which
+           Tailwind otherwise sets in a monospace stack. Unlayered, so it
+           overrides the compiled theme's font variables. */
+        :root {
+            --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+            --font-mono: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        }
+    </style>
     {% block head_extra %}{% endblock %}
 </head>
 <body class="{% block body_class %}{% endblock %}">
