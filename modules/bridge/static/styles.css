@@ -9,6 +9,21 @@
   min-height: 82vh;
 }
 
+/* The bridge page is chart-heavy, so let it use the whole window instead of
+   the shared 1480px shell width. */
+.page-wide .app-shell {
+  width: calc(100% - 32px);
+  max-width: none;
+}
+
+/* Rows that align inputs to the top (so status text below one input does not
+   push its neighbours down) still need buttons level with the input boxes. */
+@media (min-width: 768px) {
+  .label-offset {
+    padding-top: calc(0.92rem * 1.5 + 0.3rem);
+  }
+}
+
 .app-title {
   font-size: 1.5rem;
 }
@@ -145,12 +160,18 @@
   font-size: 0.85rem;
 }
 
+/* Plotly sizes itself to the container's height, so give it a real one
+   rather than a min-height. */
 .chart-frame {
-  min-height: 430px;
+  height: clamp(520px, 78vh, 1200px);
   border: 1px solid #dce3ea;
   border-radius: 0.55rem;
   padding: 0.35rem;
   background: #fcfdff;
+}
+
+.chart-frame-section {
+  height: clamp(460px, 62vh, 900px);
 }
 
 .help-modal-content {

@@ -72,22 +72,58 @@
 
   /**
    * Deck overhangs cantilever off the exterior girders, so they deflect with
-   * them. Mirror each fascia row outward by the adjacent girder spacing and
-   * copy its values, which holds the fascia deflection out past the deck edge
+   * them. Push each fascia row outward and copy its values, which holds the
+   * fascia deflection across the overhang (the deck keeps its cross slope)
    * instead of dropping to zero at the girder line.
+   *
+   * With an overhang offset, the edge row sits that distance from the fascia
+   * girder, square to it. Without one, the fascia row is mirrored by the
+   * adjacent girder spacing.
    */
-  function addOverhangRows(rows) {
+  function addOverhangRows(rows, overhangOffset) {
     if (rows.length < 2) return rows;
+    const useOffset = Number.isFinite(overhangOffset) && overhangOffset > 0;
 
-    const mirror = (inner, neighbor, label) => ({
+    const push = (inner, neighbor, label) => ({
       girder: label,
       virtual: true,
       points: inner.points.map((point, index) => {
         const other = neighbor.points[index];
         if (!other) return { e: point.e, n: point.n, value: point.value };
+
+        const awayE = point.e - other.e;
+        const awayN = point.n - other.n;
+        if (!useOffset) {
+          return { e: point.e + awayE, n: point.n + awayN, value: point.value };
+        }
+
+        // Local girder tangent from the neighbouring intervals, then its
+        // normal flipped to point away from the adjacent girder.
+        const before = inner.points[Math.max(0, index - 1)];
+        const after = inner.points[Math.min(inner.points.length - 1, index + 1)];
+        let tangentE = after.e - before.e;
+        let tangentN = after.n - before.n;
+        const tangentLength = Math.hypot(tangentE, tangentN);
+        let normalE;
+        let normalN;
+        if (tangentLength > 1e-9) {
+          tangentE /= tangentLength;
+          tangentN /= tangentLength;
+          normalE = -tangentN;
+          normalN = tangentE;
+          if (normalE * awayE + normalN * awayN < 0) {
+            normalE = -normalE;
+            normalN = -normalN;
+          }
+        } else {
+          const awayLength = Math.hypot(awayE, awayN) || 1;
+          normalE = awayE / awayLength;
+          normalN = awayN / awayLength;
+        }
+
         return {
-          e: point.e + (point.e - other.e),
-          n: point.n + (point.n - other.n),
+          e: point.e + normalE * overhangOffset,
+          n: point.n + normalN * overhangOffset,
           value: point.value,
         };
       }),
@@ -97,9 +133,9 @@
     const last = rows[rows.length - 1];
 
     return [
-      mirror(first, rows[1], first.girder),
+      push(first, rows[1], first.girder),
       ...rows,
-      mirror(last, rows[rows.length - 2], last.girder),
+      push(last, rows[rows.length - 2], last.girder),
     ];
   }
 
@@ -293,10 +329,12 @@
     const spanToGirders = input.spanToGirders || {};
     const girderGeometry = input.girderGeometry || {};
     const profiles = input.profiles || {};
+    const overhangOffset = Number(input.overhangOffset);
 
     const triangles = [];
     const warnings = [];
     const spans = [];
+    const overhangEdges = [];
 
     sortLabels(Object.keys(spanToGirders)).forEach((spanLabel) => {
       const girderLabels = sortLabels(Array.from(spanToGirders[spanLabel] || []));
@@ -324,7 +362,10 @@
         return;
       }
 
-      const rows = addOverhangRows(buildRows(girders, warnings, spanLabel));
+      const rows = addOverhangRows(buildRows(girders, warnings, spanLabel), overhangOffset);
+      [rows[0], rows[rows.length - 1]].forEach((row) => {
+        overhangEdges.push({ span: spanLabel, girder: row.girder, points: row.points.map(({ e, n }) => ({ e, n })) });
+      });
       const before = triangles.length;
       buildCells(rows, spanLabel, triangles);
       spans.push({ span: spanLabel, girders: girders.length, triangles: triangles.length - before });
@@ -348,6 +389,7 @@
       triangles,
       triangleCount: triangles.length,
       spans,
+      overhangEdges,
       warnings,
     };
   }

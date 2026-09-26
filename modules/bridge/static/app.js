@@ -18,14 +18,33 @@ const HELP_TEXT = `1. Data & Calculation Tab:
    - Upload the theoretical (undeflected) top-of-deck DTM as a LandXML surface.
    - Compute Deflected Deck builds an isopach surface from the girder deflections and
      adds it to each DTM point: Deflected Z = DTM Z + isopach.
-   - Deck overhangs hold the deflection of the exterior girder they cantilever from.
-     Past the span ends there is no isopach data, so those points keep their DTM elevation.
-   - The plan view shows the deck outline and all girders. Pick a Span/Girder to highlight
-     it and label the deflected elevations along it; every point shows values on hover.
+   - Deck overhangs hold the deflection of the exterior girder they cantilever from, so
+     the deck keeps its cross slope across the overhang.
+   - Overhang offset (ft) is the distance from the exterior girder centerline to the line
+     where elevations are needed beyond the deck model (e.g. where the screed sits),
+     measured square to the girder. Past the DTM edge the deck is carried out at its own
+     cross slope (taken from the last 2 ft of the model), and the exterior girder's
+     deflection is added. Leave it blank for no extension.
+   - The plan view shows the deck outline, all girders, and the overhang edges (dashed
+     orange). Pick a Span/Girder to highlight it and label the deflected elevations along
+     it; every point, including the overhang edge points, shows values on hover.
    - Export Top of Deck Deflected points writes N, E, deflected elevation, description,
-     original elevation, and the isopach value applied.
+     deck elevation, and the isopach value applied at every girder interval. With an
+     overhang offset it also writes the overhang edge points (description ending in "OH",
+     e.g. A0100OH), noting whether their deck elevation was carried at the cross slope.
 
-4. Notes:
+4. Alignment Sections (Deflected Deck Tab):
+   - Upload a civil alignment as LandXML (<Alignment> with lines, curves, and spirals).
+     If the file holds several alignments, choose one from the list.
+   - Stations are listed at the Section interval across the bridge. Step through them with
+     the arrows, type any station in "Go to station" (12+34.50 or 1234.50), or click the
+     alignment in the plan view.
+   - Each section is cut square to the alignment. It shows the original DTM surface (blue)
+     and the deflected surface (red), with the girders (dotted) and the overhang edges
+     (dashed orange) marked. Offsets are negative left and positive right of the alignment.
+   - The plan view draws the alignment and the current section line.
+
+5. Notes:
    - Deflection at midspan is required.
    - Deflection at quarter-span and third-span are optional.
    - Ensure all files use the same coordinate system.
@@ -94,8 +113,18 @@ const state = {
   girderGeometry: {},
   logs: [],
   dtm: null,
+  dtmTin: null,
   isopachMesh: null,
   deflectedDeck: null,
+  alignments: [],
+  alignment: null,
+  sectionStations: [],
+  sectionStation: null,
+  sectionRangeNote: "",
+  section: null,
+  // Bumped whenever the plotted data set changes, so the deck plan keeps the
+  // user's zoom while only the section line moves.
+  planRevision: 0,
 };
 
 const ui = {
@@ -124,6 +153,15 @@ const ui = {
   deckGirderSelect: document.getElementById("deckGirderSelect"),
   deckChart: document.getElementById("deckChart"),
   deckStatus: document.getElementById("deckStatus"),
+  overhangInput: document.getElementById("overhangInput"),
+  alignmentFileInput: document.getElementById("alignmentFileInput"),
+  alignmentUploadStatus: document.getElementById("alignmentUploadStatus"),
+  alignmentSelect: document.getElementById("alignmentSelect"),
+  sectionIntervalInput: document.getElementById("sectionIntervalInput"),
+  sectionStationSelect: document.getElementById("sectionStationSelect"),
+  sectionStationInput: document.getElementById("sectionStationInput"),
+  sectionStatus: document.getElementById("sectionStatus"),
+  sectionChart: document.getElementById("sectionChart"),
 };
 
 function setProgress(percent, text) {
@@ -258,6 +296,7 @@ function activateTab(tab) {
   }
 
   if (tab === "export") {
+    refreshSections();
     renderDeflectedDeckChart();
   }
 }
@@ -684,7 +723,10 @@ async function loadDtmSurface() {
 
   if (!file) {
     state.dtm = null;
+    state.dtmTin = null;
+    state.planRevision += 1;
     ui.dtmUploadStatus.textContent = "";
+    refreshSections();
     renderDeflectedDeckChart();
     return;
   }
@@ -692,6 +734,8 @@ async function loadDtmSurface() {
   const { surfaces } = BridgeLandXml.parseLandXml(await readTextFile(file));
   const surface = surfaces[0];
   state.dtm = surface;
+  state.dtmTin = BridgeIsopach.buildTinInterpolator(surface.points, surface.faces);
+  state.planRevision += 1;
 
   ui.dtmUploadStatus.textContent = `Loaded "${surface.name}" - ${surface.points.length} points, ${surface.faces.length} faces.`;
   logLine(
@@ -709,7 +753,119 @@ async function loadDtmSurface() {
     );
   }
 
+  refreshSections();
   renderDeflectedDeckChart();
+}
+
+/** Blank means "use the girder spacing"; returns null in that case. */
+function readOverhangOffset() {
+  const raw = String(ui.overhangInput?.value ?? "").trim();
+  if (!raw) return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error("Overhang offset must be a number of feet, 0 or greater (or blank to use the girder spacing).");
+  }
+  return value > 0 ? value : null;
+}
+
+// How much of the deck, inward from the DTM edge, sets the cross slope that
+// is carried out to the overhang (screed) line.
+const CROSS_SLOPE_RUN = 2;
+
+/**
+ * Deck elevations out to the overhang (screed) line. Inside the DTM this is
+ * the TIN elevation. In the band between an exterior girder and its overhang
+ * edge, but past the DTM, the last CROSS_SLOPE_RUN ft of deck is extended
+ * square to the girder at its own cross slope, so a surveyor gets prorated
+ * elevations where the screed sits beyond the model.
+ */
+function buildDeckSurface(tin, mesh, overhangOffset) {
+  const bands = [];
+  if (overhangOffset !== null && mesh) {
+    mesh.overhangEdges.forEach((edge) => {
+      const centerline = state.girderGeometry[`${edge.span}||${edge.girder}`]?.planCenterline;
+      if (centerline?.length >= 2) bands.push({ ...edge, centerline });
+    });
+  }
+
+  /** Foot on the fascia girder and outward distance, if the point is in an overhang band. */
+  function locate(e, n) {
+    let best = null;
+    bands.forEach((band) => {
+      const { centerline, points: edgePoints } = band;
+      for (let i = 0; i + 1 < centerline.length; i += 1) {
+        const a = centerline[i];
+        const b = centerline[i + 1];
+        const dE = b.e - a.e;
+        const dN = b.n - a.n;
+        const lengthSq = dE * dE + dN * dN;
+        if (lengthSq < 1e-12) continue;
+        const u = ((e - a.e) * dE + (n - a.n) * dN) / lengthSq;
+        if (u < -1e-9 || u > 1 + 1e-9) continue;
+
+        const foot = { e: a.e + u * dE, n: a.n + u * dN };
+        // Outward direction, interpolated from the overhang edge rows.
+        let outE = (1 - u) * (edgePoints[i].e - a.e) + u * (edgePoints[i + 1].e - b.e);
+        let outN = (1 - u) * (edgePoints[i].n - a.n) + u * (edgePoints[i + 1].n - b.n);
+        const outLength = Math.hypot(outE, outN);
+        if (outLength < 1e-9) continue;
+        outE /= outLength;
+        outN /= outLength;
+
+        const along = (e - foot.e) * outE + (n - foot.n) * outN;
+        if (along <= 0 || along > overhangOffset + 1e-6) continue;
+        if (!best || along < best.along) best = { foot, outE, outN, along, band };
+      }
+    });
+    return best;
+  }
+
+  function extendedZ(hit) {
+    const at = (s) => tin.sample(hit.foot.e + hit.outE * s, hit.foot.n + hit.outN * s);
+    if (at(0) === null) return null;
+
+    // Bisect for the DTM edge between the girder (inside) and the point (outside).
+    let inside = 0;
+    let outside = hit.along;
+    for (let i = 0; i < 40 && outside - inside > 1e-6; i += 1) {
+      const middle = (inside + outside) / 2;
+      if (at(middle) === null) outside = middle;
+      else inside = middle;
+    }
+
+    const edgeZ = at(inside);
+    const back = Math.max(0, inside - CROSS_SLOPE_RUN);
+    const backZ = at(back);
+    const slope = backZ !== null && inside - back > 0.05 ? (edgeZ - backZ) / (inside - back) : 0;
+    return { z: edgeZ + slope * (hit.along - inside), crossSlope: slope, dtmEdge: inside };
+  }
+
+  return {
+    extends: bands.length > 0,
+    /** True where the deck exists only because of the overhang extension. */
+    inOverhangBand(e, n) {
+      return bands.length > 0 && locate(e, n) !== null;
+    },
+    /** {z, extended, crossSlope} or null where there is no deck. */
+    sample(e, n) {
+      const z = tin ? tin.sample(e, n) : null;
+      if (z !== null) return { z, extended: false, crossSlope: null };
+      if (!bands.length || !tin) return null;
+      const hit = locate(e, n);
+      if (!hit) return null;
+      const result = extendedZ(hit);
+      if (!result) return null;
+      // A point sitting right on the screed line is on the mesh boundary,
+      // where sampling can miss by rounding; nudge inward to read it.
+      const inward = Math.max(0, hit.along - 1e-4);
+      return {
+        z: result.z,
+        extended: true,
+        crossSlope: result.crossSlope,
+        meshPoint: { e: hit.foot.e + hit.outE * inward, n: hit.foot.n + hit.outN * inward },
+      };
+    },
+  };
 }
 
 function getDeckOutlineRings() {
@@ -766,12 +922,26 @@ function computeDeflectedDeck() {
     return false;
   }
 
+  let overhangOffset;
+  try {
+    overhangOffset = readOverhangOffset();
+  } catch (error) {
+    window.alert(error.message);
+    return false;
+  }
+
   const mesh = BridgeIsopach.buildIsopachMesh({
     spanToGirders: state.spanToGirders,
     girderGeometry: state.girderGeometry,
     profiles: state.profiles,
+    overhangOffset,
   });
   mesh.warnings.forEach((warning) => logLine(`Isopach WARNING: ${warning}`));
+  logLine(
+    overhangOffset === null
+      ? "Isopach: no overhang offset given; the deck is not extended past the DTM."
+      : `Isopach: overhang edge set ${overhangOffset.toFixed(3)} ft outside the exterior girder centerlines.`,
+  );
 
   if (!mesh.triangleCount) {
     window.alert("The isopach surface is empty. At least one span needs two or more girders.");
@@ -818,7 +988,7 @@ function computeDeflectedDeck() {
   // PGL), so it may have no vertex anywhere near an interior girder. Sample the
   // deflected surface along every girder centerline instead, so each girder has
   // elevations to report regardless of where the DTM happens to place vertices.
-  const tin = BridgeIsopach.buildTinInterpolator(state.dtm.points, state.dtm.faces);
+  const tin = state.dtmTin;
   const girderPoints = {};
   let sampledGirders = 0;
 
@@ -851,8 +1021,53 @@ function computeDeflectedDeck() {
     });
   });
 
+  // Screed points: the overhang edge at every girder interval, with the deck
+  // carried out at its cross slope and the fascia girder's deflection added.
+  const deckSurface = buildDeckSurface(tin, mesh, overhangOffset);
+  const edgePoints = [];
+  let extendedEdgePoints = 0;
+  if (deckSurface.extends) {
+    mesh.overhangEdges.forEach((edge) => {
+      const profile = state.profiles[`${edge.span}||${edge.girder}`] ?? [];
+      edge.points.forEach((point, interval) => {
+        const deck = deckSurface.sample(point.e, point.n);
+        if (!deck || !profile[interval]) return;
+        // The overhang row carries the fascia value by construction; read it
+        // from the profile rather than sampling right on the mesh boundary.
+        const isopach = profile[interval].deflectionIn / 12;
+        if (deck.extended) extendedEdgePoints += 1;
+        edgePoints.push({
+          span: edge.span,
+          girder: edge.girder,
+          interval,
+          e: point.e,
+          n: point.n,
+          originalZ: deck.z,
+          extended: deck.extended,
+          crossSlope: deck.crossSlope,
+          isopach,
+          deflectedZ: deck.z + isopach,
+        });
+      });
+    });
+  }
+
   state.isopachMesh = mesh;
-  state.deflectedDeck = { points, inside, girderPoints };
+  state.deflectedDeck = { points, inside, girderPoints, overhangOffset, deckSurface, edgePoints };
+  state.planRevision += 1;
+
+  if (deckSurface.extends) {
+    const expected = mesh.overhangEdges.reduce((total, edge) => total + edge.points.length, 0);
+    logLine(
+      `Overhang: ${edgePoints.length} of ${expected} screed points sampled, ${extendedEdgePoints} of them past the ` +
+        `DTM edge (deck carried out at its cross slope over the last ${CROSS_SLOPE_RUN} ft of the model).`,
+    );
+    if (edgePoints.length < expected) {
+      logLine(
+        "Overhang WARNING: some screed points have no deck elevation; the DTM does not reach the exterior girder there.",
+      );
+    }
+  }
 
   logLine(
     `Deflected deck: ${points.length} DTM points - ${inside} inside the isopach surface, ` +
@@ -868,6 +1083,7 @@ function computeDeflectedDeck() {
   }
   logDeckReferenceStats();
 
+  refreshSections();
   renderDeflectedDeckChart();
   return true;
 }
@@ -881,19 +1097,22 @@ function computeDeflectedDeck() {
 function buildIsopachHeatmap(rings) {
   const mesh = state.isopachMesh;
   if (!mesh || !rings.length) return null;
+  const surface = state.deflectedDeck?.deckSurface;
+  const extendsDeck = Boolean(surface?.extends);
 
   let minE = Infinity;
   let maxE = -Infinity;
   let minN = Infinity;
   let maxN = -Infinity;
-  rings.forEach((ring) =>
-    ring.forEach((point) => {
-      if (point.e < minE) minE = point.e;
-      if (point.e > maxE) maxE = point.e;
-      if (point.n < minN) minN = point.n;
-      if (point.n > maxN) maxN = point.n;
-    }),
-  );
+  const include = (point) => {
+    if (point.e < minE) minE = point.e;
+    if (point.e > maxE) maxE = point.e;
+    if (point.n < minN) minN = point.n;
+    if (point.n > maxN) maxN = point.n;
+  };
+  rings.forEach((ring) => ring.forEach(include));
+  // With an overhang offset the deck reaches the screed line, past the DTM.
+  if (extendsDeck) mesh.overhangEdges.forEach((edge) => edge.points.forEach(include));
 
   const width = maxE - minE;
   const height = maxN - minN;
@@ -908,7 +1127,7 @@ function buildIsopachHeatmap(rings) {
   const ys = Array.from({ length: rows }, (_, j) => minN + j * step);
   const z = ys.map((n) =>
     xs.map((e) => {
-      if (!BridgeIsopach.pointInRings(e, n, rings)) return null;
+      if (!BridgeIsopach.pointInRings(e, n, rings) && !(extendsDeck && surface.inOverhangBand(e, n))) return null;
       const hit = mesh.sample(e, n);
       return hit ? hit.value : 0;
     }),
@@ -979,6 +1198,35 @@ function renderDeflectedDeckChart() {
     });
   });
 
+  // Overhang (screed) lines only exist when the user gave an offset; the
+  // blank-offset mesh edge is an internal detail, not a deck edge.
+  const screedEdges = state.deflectedDeck?.deckSurface?.extends ? state.isopachMesh.overhangEdges : [];
+  const screedPoints = state.deflectedDeck?.edgePoints ?? [];
+  screedEdges.forEach((edge) => {
+    const points = screedPoints.filter((point) => point.span === edge.span && point.girder === edge.girder);
+    traces.push({
+      x: points.map((point) => point.e),
+      y: points.map((point) => point.n),
+      mode: "lines+markers",
+      line: { width: 2, color: "#fd7e14", dash: "dash" },
+      marker: { size: 6, color: "#fd7e14" },
+      name: `Span ${edge.span} - overhang edge at Girder ${edge.girder}`,
+      customdata: points.map((point) => [
+        `${formatSpan(point.span)}${formatGirder(point.girder)}${formatInterval(point.interval)}OH`,
+        point.originalZ,
+        point.isopach,
+        point.deflectedZ,
+        point.extended ? "carried at cross slope" : "from DTM",
+      ]),
+      hovertemplate:
+        "<b>%{customdata[0]}</b> (overhang edge)<br>N %{y:.3f}<br>E %{x:.3f}<br>" +
+        "Deck %{customdata[1]:.3f} ft (%{customdata[4]})<br>Deflection %{customdata[2]:.3f} ft<br>" +
+        "<b>Deflected %{customdata[3]:.3f} ft</b><extra></extra>",
+    });
+  });
+
+  alignmentPlanTraces().forEach((trace) => traces.push(trace));
+
   const deck = state.deflectedDeck;
   if (deck) {
     // Plotly's hovertemplate parser does not accept the "+" sign flag, and
@@ -1035,7 +1283,10 @@ function renderDeflectedDeckChart() {
     if (deck) {
       ui.deckStatus.textContent =
         `${deck.points.length} deflected deck points (${deck.inside} inside the isopach surface, ` +
-        `${deck.points.length - deck.inside} keeping their original elevation).`;
+        `${deck.points.length - deck.inside} keeping their original elevation).` +
+        (deck.edgePoints?.length
+          ? ` ${deck.edgePoints.length} overhang edge points ${deck.overhangOffset} ft outside the exterior girders.`
+          : "");
     } else if (state.dtm) {
       ui.deckStatus.textContent =
         `"${state.dtm.name}" loaded with ${state.dtm.points.length} points. ` +
@@ -1061,10 +1312,11 @@ function renderDeflectedDeckChart() {
   const xBounds = boundsOfTraces("x");
   const yBounds = boundsOfTraces("y");
 
-  Plotly.newPlot(
+  Plotly.react(
     ui.deckChart,
     traces,
     {
+      uirevision: state.planRevision,
       title: "<b>Deflected Deck - Plan View (N/E)</b>",
       xaxis: {
         title: { text: "Easting (ft)", standoff: 34 },
@@ -1096,6 +1348,618 @@ function renderDeflectedDeckChart() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Alignment sections
+// ---------------------------------------------------------------------------
+
+const MAX_SECTION_STATIONS = 2000;
+const SECTION_SAMPLES = 600;
+
+/** Every plan point that belongs to the bridge: girder centerlines and deck outline. */
+function bridgePlanPoints() {
+  const points = [];
+  Object.values(state.girderGeometry).forEach((geometry) => {
+    (geometry?.planCenterline ?? []).forEach((point) => points.push(point));
+  });
+  getDeckOutlineRings().forEach((ring) => ring.forEach((point) => points.push(point)));
+  return points;
+}
+
+/** Station range of the bridge along an alignment, or the whole alignment if unknown. */
+function bridgeStationRange(alignment) {
+  let min = Infinity;
+  let max = -Infinity;
+  let known = 0;
+  let alongside = 0;
+  bridgePlanPoints().forEach((point) => {
+    known += 1;
+    const hit = alignment.stationOffsetOf(point.e, point.n);
+    // Points past the alignment's ends all pile up on the end station.
+    if (!hit || hit.beyondEnds) return;
+    alongside += 1;
+    if (hit.station < min) min = hit.station;
+    if (hit.station > max) max = hit.station;
+  });
+  // An alignment that only grazes the bridge (e.g. ends at it) gives a
+  // sliver of a range; treat it as not running alongside.
+  if (!(max - min > 1) || alongside < known * 0.25) {
+    return { min: alignment.staStart, max: alignment.staEnd, fromBridge: false, offBridge: known > 0 };
+  }
+  return { min, max, fromBridge: true };
+}
+
+/** Mean distance from the bridge to an alignment, used to pick a sensible default. */
+function bridgeDistanceTo(alignment) {
+  const points = bridgePlanPoints();
+  if (!points.length) return 0;
+  const step = Math.max(1, Math.floor(points.length / 200));
+  let total = 0;
+  let count = 0;
+  for (let i = 0; i < points.length; i += step) {
+    const hit = alignment.stationOffsetOf(points[i].e, points[i].n);
+    if (!hit) continue;
+    total += hit.distance;
+    count += 1;
+  }
+  return count ? total / count : Infinity;
+}
+
+function readSectionInterval() {
+  const value = Number(ui.sectionIntervalInput?.value);
+  return Number.isFinite(value) && value > 0 ? value : 10;
+}
+
+function populateSectionStationSelect() {
+  const select = ui.sectionStationSelect;
+  if (!state.sectionStations.length) {
+    select.innerHTML = '<option value="">(Upload an alignment)</option>';
+    select.disabled = true;
+    return;
+  }
+
+  select.disabled = false;
+  select.innerHTML = "";
+  state.sectionStations.forEach((station) => {
+    const option = document.createElement("option");
+    option.value = station.toFixed(4);
+    option.textContent = BridgeAlignment.formatStation(station);
+    select.appendChild(option);
+  });
+  if (state.sectionStation !== null && state.sectionStation !== undefined) {
+    select.value = state.sectionStation.toFixed(4);
+  }
+}
+
+function rebuildSectionStations() {
+  const alignment = state.alignment;
+  if (!alignment) {
+    state.sectionStations = [];
+    return "";
+  }
+
+  const range = bridgeStationRange(alignment);
+  let interval = readSectionInterval();
+  let note = "";
+  if ((range.max - range.min) / interval > MAX_SECTION_STATIONS) {
+    interval = Math.ceil((range.max - range.min) / MAX_SECTION_STATIONS);
+    note = ` Interval raised to ${interval} ft to keep the station list under ${MAX_SECTION_STATIONS} entries.`;
+  }
+
+  // Round stations land on the interval; the bridge's own first and last
+  // stations are always included so both ends can be inspected.
+  const stations = [range.min];
+  for (let station = Math.ceil(range.min / interval) * interval; station < range.max; station += interval) {
+    if (station - stations[stations.length - 1] > 1e-6) stations.push(station);
+  }
+  if (range.max - stations[stations.length - 1] > 1e-6) stations.push(range.max);
+
+  // Keep a station the user typed in, if it still falls on the alignment.
+  const current = state.sectionStation;
+  if (
+    current !== null &&
+    current !== undefined &&
+    current >= alignment.staStart &&
+    current <= alignment.staEnd &&
+    !stations.some((station) => Math.abs(station - current) < 1e-6)
+  ) {
+    stations.push(current);
+    stations.sort((a, b) => a - b);
+  }
+
+  state.sectionStations = stations;
+  if (!stations.some((station) => Math.abs(station - (current ?? NaN)) < 1e-6)) {
+    // Default to the station nearest mid-bridge.
+    const middle = (range.min + range.max) / 2;
+    state.sectionStation = stations.reduce((best, station) =>
+      Math.abs(station - middle) < Math.abs(best - middle) ? station : best,
+    );
+  }
+
+  if (range.fromBridge) {
+    return `Bridge spans stations ${BridgeAlignment.formatStation(range.min)} to ${BridgeAlignment.formatStation(range.max)}.${note}`;
+  }
+  return range.offBridge
+    ? `The bridge is not alongside this alignment, so the whole alignment is listed; choose another alignment.${note}`
+    : `Run the calculation or load the DTM to limit stations to the bridge.${note}`;
+}
+
+/** Rebuilds the station list and redraws the section; call after any input changes. */
+function refreshSections() {
+  if (!ui.sectionChart) return;
+  state.sectionRangeNote = rebuildSectionStations();
+  populateSectionStationSelect();
+  renderSectionChart();
+}
+
+function nearestListedStation(station) {
+  if (!state.sectionStations.length) return station;
+  return state.sectionStations.reduce((best, candidate) =>
+    Math.abs(candidate - station) < Math.abs(best - station) ? candidate : best,
+  );
+}
+
+function showSectionAt(station) {
+  if (!state.alignment || !Number.isFinite(station)) return;
+  state.sectionStation = station;
+  if (!state.sectionStations.some((listed) => Math.abs(listed - station) < 1e-6)) {
+    state.sectionStations.push(station);
+    state.sectionStations.sort((a, b) => a - b);
+  }
+  populateSectionStationSelect();
+  renderSectionChart();
+  renderDeflectedDeckChart();
+}
+
+function stepSection(direction) {
+  const stations = state.sectionStations;
+  if (!stations.length) return;
+  const index = stations.findIndex((station) => Math.abs(station - state.sectionStation) < 1e-6);
+  const next = Math.max(0, Math.min(stations.length - 1, (index < 0 ? 0 : index) + direction));
+  showSectionAt(stations[next]);
+}
+
+/** Section-line crossings of a plan polyline, deduplicated at shared vertices. */
+function sectionCrossings(origin, right, polyline) {
+  const offsets = [];
+  BridgeAlignment.crossingsOf(origin, right, polyline).forEach((hit) => {
+    if (!offsets.some((offset) => Math.abs(offset - hit.offset) < 1e-6)) offsets.push(hit.offset);
+  });
+  return offsets;
+}
+
+function buildSection(station) {
+  const alignment = state.alignment;
+  const frame = alignment.pointAt(station);
+  const origin = { e: frame.e, n: frame.n };
+  const right = { e: frame.rightE, n: frame.rightN };
+  const at = (offset) => ({ e: origin.e + right.e * offset, n: origin.n + right.n * offset });
+
+  const mesh = state.deflectedDeck ? state.isopachMesh : null;
+  const tin = state.dtmTin;
+  const surface = state.deflectedDeck?.deckSurface ?? null;
+  const extendsDeck = Boolean(surface?.extends);
+
+  const girders = [];
+  sortedSpans().forEach((span) => {
+    sortedGirders(span).forEach((girder) => {
+      const centerline = state.girderGeometry[`${span}||${girder}`]?.planCenterline;
+      if (!centerline?.length) return;
+      sectionCrossings(origin, right, centerline).forEach((offset) => girders.push({ span, girder, offset }));
+    });
+  });
+
+  const overhangs = [];
+  (extendsDeck ? mesh.overhangEdges : []).forEach((edge) => {
+    sectionCrossings(origin, right, edge.points).forEach((offset) =>
+      overhangs.push({ span: edge.span, girder: edge.girder, offset }),
+    );
+  });
+
+  const deckEdges = [];
+  getDeckOutlineRings().forEach((ring) => {
+    if (ring.length >= 3) sectionCrossings(origin, right, ring.concat([ring[0]])).forEach((o) => deckEdges.push(o));
+  });
+
+  const featureOffsets = girders
+    .map((item) => item.offset)
+    .concat(overhangs.map((item) => item.offset), deckEdges);
+  if (!featureOffsets.length) return { station, origin, right, empty: true };
+
+  let minOffset = Math.min(...featureOffsets);
+  let maxOffset = Math.max(...featureOffsets);
+  const pad = Math.max(2, (maxOffset - minOffset) * 0.04);
+  minOffset -= pad;
+  maxOffset += pad;
+
+  const sampleSurfaces = (offset) => {
+    const point = at(offset);
+    let deck = null;
+    if (surface) deck = surface.sample(point.e, point.n);
+    else if (tin) {
+      const z = tin.sample(point.e, point.n);
+      deck = z === null ? null : { z, extended: false };
+    }
+    if (!deck) return { offset, originalZ: null, isopach: null, deflectedZ: null, extended: false };
+
+    const meshPoint = deck.meshPoint ?? point;
+    const hit = mesh ? mesh.sample(meshPoint.e, meshPoint.n) : null;
+    const isopach = mesh ? (hit ? hit.value : 0) : null;
+    return {
+      offset,
+      originalZ: deck.z,
+      isopach,
+      deflectedZ: mesh ? deck.z + isopach : null,
+      extended: deck.extended,
+    };
+  };
+
+  // Regular samples plus the exact feature offsets, so girder and edge
+  // elevations are read at the marker rather than interpolated between samples.
+  const offsets = [];
+  for (let i = 0; i <= SECTION_SAMPLES; i += 1) {
+    offsets.push(minOffset + ((maxOffset - minOffset) * i) / SECTION_SAMPLES);
+  }
+  featureOffsets.forEach((offset) => offsets.push(offset));
+  offsets.sort((a, b) => a - b);
+
+  const profile = offsets.map(sampleSurfaces);
+  girders.forEach((item) => Object.assign(item, sampleSurfaces(item.offset), at(item.offset)));
+  overhangs.forEach((item) => Object.assign(item, sampleSurfaces(item.offset), at(item.offset)));
+
+  return { station, origin, right, minOffset, maxOffset, profile, girders, overhangs, hasDeflected: Boolean(mesh) };
+}
+
+function renderSectionChart() {
+  if (!ui.sectionChart) return;
+
+  const setStatus = (text) => {
+    ui.sectionStatus.textContent = text;
+  };
+
+  state.section = null;
+  if (!state.alignment) {
+    Plotly.purge(ui.sectionChart);
+    setStatus("Upload a civil alignment (LandXML) to draw sections across the deck.");
+    return;
+  }
+  if (!state.dtmTin?.triangleCount) {
+    Plotly.purge(ui.sectionChart);
+    setStatus(
+      state.dtm
+        ? "The DTM has no TIN faces, so sections cannot be sampled from it."
+        : "Upload the top-of-deck DTM to draw sections.",
+    );
+    return;
+  }
+
+  const station = state.sectionStation;
+  if (!Number.isFinite(station)) {
+    Plotly.purge(ui.sectionChart);
+    setStatus("Choose a station.");
+    return;
+  }
+
+  const section = buildSection(station);
+  const stationText = BridgeAlignment.formatStation(station);
+  if (section.empty) {
+    Plotly.purge(ui.sectionChart);
+    setStatus(`Station ${stationText} does not cross the deck or any girder.`);
+    return;
+  }
+  state.section = section;
+
+  const x = section.profile.map((point) => point.offset);
+  const profile = section.profile;
+  // Split each surface into the part read from the DTM (solid) and the part
+  // carried out at the cross slope to the screed line (dashed). The dashed
+  // part repeats its neighbouring DTM sample so the two lines join.
+  const touchesExtended = (i) => profile[i - 1]?.extended || profile[i + 1]?.extended;
+  const modelPart = (value) => profile.map((point) => (point.extended ? null : value(point)));
+  const extendedPart = (value) =>
+    profile.map((point, i) => (point.extended || (value(point) !== null && touchesExtended(i)) ? value(point) : null));
+  const hasExtended = profile.some((point) => point.extended);
+  const deflectionIn = profile.map((point) => (point.isopach === null ? null : point.isopach * 12));
+
+  const traces = [
+    {
+      x,
+      y: modelPart((point) => point.originalZ),
+      mode: "lines",
+      line: { width: 2.5, color: "#1b5ba3" },
+      name: "Original DTM",
+      legendgroup: "original",
+      hovertemplate: "%{y:.3f} ft<extra>Original</extra>",
+    },
+  ];
+  if (hasExtended) {
+    traces.push({
+      x,
+      y: extendedPart((point) => point.originalZ),
+      mode: "lines",
+      line: { width: 2.5, color: "#1b5ba3", dash: "dash" },
+      name: "Original, carried at cross slope",
+      legendgroup: "original",
+      hovertemplate: "%{y:.3f} ft<extra>Original (extended)</extra>",
+    });
+  }
+
+  if (section.hasDeflected) {
+    traces.push({
+      x,
+      y: modelPart((point) => point.deflectedZ),
+      customdata: deflectionIn,
+      mode: "lines",
+      line: { width: 2.5, color: "#dc3545" },
+      name: "Deflected",
+      legendgroup: "deflected",
+      hovertemplate: "%{y:.3f} ft (deflection %{customdata:.3f} in)<extra>Deflected</extra>",
+    });
+    if (hasExtended) {
+      traces.push({
+        x,
+        y: extendedPart((point) => point.deflectedZ),
+        customdata: deflectionIn,
+        mode: "lines",
+        line: { width: 2.5, color: "#dc3545", dash: "dash" },
+        name: "Deflected, carried at cross slope",
+        legendgroup: "deflected",
+        hovertemplate: "%{y:.3f} ft (deflection %{customdata:.3f} in)<extra>Deflected (extended)</extra>",
+      });
+    }
+  }
+
+  const spansCrossed = new Set(section.girders.map((item) => item.span));
+  const girderLabel = (item) => (spansCrossed.size > 1 ? `${item.span}-G${item.girder}` : `G${item.girder}`);
+  const markerZ = (item) => (section.hasDeflected ? item.deflectedZ : item.originalZ);
+
+  const girdersWithZ = section.girders.filter((item) => markerZ(item) !== null);
+  if (girdersWithZ.length) {
+    traces.push({
+      x: girdersWithZ.map((item) => item.offset),
+      y: girdersWithZ.map(markerZ),
+      mode: "markers",
+      marker: { size: 9, color: "#212529", symbol: "triangle-down", line: { width: 1, color: "#fff" } },
+      name: "Girders",
+      customdata: girdersWithZ.map((item) => [
+        item.span,
+        item.girder,
+        item.originalZ,
+        item.isopach === null ? 0 : item.isopach * 12,
+        item.n,
+        item.e,
+      ]),
+      hovertemplate:
+        "<b>Span %{customdata[0]} - Girder %{customdata[1]}</b><br>Offset %{x:.3f} ft<br>" +
+        "N %{customdata[4]:.3f}  E %{customdata[5]:.3f}<br>DTM %{customdata[2]:.3f} ft<br>" +
+        (section.hasDeflected ? "Deflection %{customdata[3]:.3f} in<br><b>Deflected %{y:.3f} ft</b>" : "") +
+        "<extra></extra>",
+    });
+  }
+
+  const overhangsWithZ = section.overhangs.filter((item) => markerZ(item) !== null);
+  if (overhangsWithZ.length) {
+    traces.push({
+      x: overhangsWithZ.map((item) => item.offset),
+      y: overhangsWithZ.map(markerZ),
+      mode: "markers",
+      marker: { size: 9, color: "#fd7e14", symbol: "diamond", line: { width: 1, color: "#fff" } },
+      name: "Overhang edges",
+      customdata: overhangsWithZ.map((item) => [
+        item.span,
+        item.girder,
+        item.originalZ,
+        item.isopach === null ? 0 : item.isopach * 12,
+        item.extended ? "carried at cross slope" : "from DTM",
+      ]),
+      hovertemplate:
+        "<b>Overhang edge (Span %{customdata[0]}, Girder %{customdata[1]})</b><br>Offset %{x:.3f} ft<br>" +
+        "Deck %{customdata[2]:.3f} ft (%{customdata[4]})<br>Deflection %{customdata[3]:.3f} in<br>" +
+        "<b>Deflected %{y:.3f} ft</b><extra></extra>",
+    });
+  }
+
+  const shapes = [];
+  const annotations = [];
+  const verticalLine = (offset, color, dash) =>
+    shapes.push({
+      type: "line",
+      xref: "x",
+      yref: "paper",
+      x0: offset,
+      x1: offset,
+      y0: 0,
+      y1: 1,
+      line: { color, width: 1, dash },
+    });
+  const topLabel = (offset, text, color) =>
+    annotations.push({
+      x: offset,
+      y: 1,
+      xref: "x",
+      yref: "paper",
+      yanchor: "bottom",
+      text,
+      showarrow: false,
+      font: { size: 10, color },
+    });
+
+  section.girders.forEach((item) => {
+    verticalLine(item.offset, "#6c757d", "dot");
+    topLabel(item.offset, girderLabel(item), "#343a40");
+  });
+  section.overhangs.forEach((item) => {
+    verticalLine(item.offset, "#fd7e14", "dash");
+    topLabel(item.offset, "OH", "#c35a00");
+  });
+  if (section.minOffset <= 0 && section.maxOffset >= 0) {
+    verticalLine(0, "#198754", "dashdot");
+    topLabel(0, "CL", "#198754");
+  }
+
+  Plotly.newPlot(
+    ui.sectionChart,
+    traces,
+    {
+      title: { text: `<b>Section at Sta ${stationText}</b> - ${state.alignment.name}`, y: 0.97 },
+      xaxis: {
+        title: { text: "Offset from alignment (ft) - left negative, right positive" },
+        range: [section.minOffset, section.maxOffset],
+        zeroline: false,
+      },
+      yaxis: { title: { text: "Elevation (ft)" }, tickformat: ".2f", automargin: true },
+      hovermode: "closest",
+      shapes,
+      annotations,
+      margin: { t: 90, r: 25, b: 110, l: 80 },
+      paper_bgcolor: "#fcfdff",
+      plot_bgcolor: "#fcfdff",
+      showlegend: true,
+      legend: { orientation: "h", x: 0, y: -0.2, yanchor: "top" },
+    },
+    PLOTLY_CONFIG,
+  );
+
+  const deflections = section.girders.map((item) => item.isopach).filter((value) => value !== null);
+  const parts = [
+    `Sta ${stationText}: ${section.girders.length} girder crossing(s), ${section.overhangs.length} overhang edge(s).`,
+  ];
+  if (section.hasDeflected && deflections.length) {
+    const largest = deflections.reduce((best, value) => (Math.abs(value) > Math.abs(best) ? value : best));
+    parts.push(`Largest girder deflection here: ${(largest * 12).toFixed(3)} in.`);
+  } else if (!section.hasDeflected) {
+    parts.push("Compute the deflected deck to add the deflected surface and overhang edges.");
+  }
+  if (state.sectionRangeNote) parts.push(state.sectionRangeNote);
+  setStatus(parts.join(" "));
+}
+
+/** Alignment (clipped near the bridge) and the current section line, for the deck plan. */
+function alignmentPlanTraces() {
+  const alignment = state.alignment;
+  if (!alignment) return [];
+
+  const range = bridgeStationRange(alignment);
+  const margin = range.fromBridge ? Math.max(20, (range.max - range.min) * 0.1) : 0;
+  const from = Math.max(alignment.staStart, range.min - margin);
+  const to = Math.min(alignment.staEnd, range.max + margin);
+
+  // Sample the exact geometry across the clipped range rather than filtering
+  // the densified vertices: a long straight <Line> has only its two end
+  // vertices, which both fall outside the range when it runs past the bridge.
+  // Regular samples also give every point a station to click on.
+  const count = Math.max(2, Math.min(1000, Math.ceil((to - from) / 2) + 1));
+  const shown = [];
+  for (let i = 0; i < count && to > from; i += 1) {
+    const station = from + ((to - from) * i) / (count - 1);
+    const frame = alignment.pointAt(station);
+    shown.push({ e: frame.e, n: frame.n, station });
+  }
+  const traces = [];
+  if (shown.length >= 2) {
+    traces.push({
+      x: shown.map((point) => point.e),
+      y: shown.map((point) => point.n),
+      mode: "lines",
+      line: { width: 2, color: "#198754", dash: "dashdot" },
+      name: alignment.name,
+      customdata: shown.map((point) => [point.station]),
+      hovertemplate: `${alignment.name}<br>Sta %{customdata[0]:.2f}<br>Click to cut a section<extra></extra>`,
+    });
+  }
+
+  const section = state.section;
+  if (section && !section.empty) {
+    const ends = [section.minOffset, section.maxOffset].map((offset) => ({
+      e: section.origin.e + section.right.e * offset,
+      n: section.origin.n + section.right.n * offset,
+    }));
+    traces.push({
+      x: ends.map((point) => point.e),
+      y: ends.map((point) => point.n),
+      mode: "lines+text",
+      line: { width: 3, color: "#0dcaf0" },
+      text: ["", `Sta ${BridgeAlignment.formatStation(section.station)}`],
+      textposition: "middle right",
+      textfont: { size: 11, color: "#055160" },
+      name: "Section line",
+      hoverinfo: "skip",
+    });
+  }
+  return traces;
+}
+
+async function loadAlignmentFile() {
+  const [file] = ui.alignmentFileInput.files;
+  state.alignments = [];
+  state.alignment = null;
+  state.sectionStation = null;
+
+  if (!file) {
+    ui.alignmentUploadStatus.textContent = "";
+    populateAlignmentSelect();
+    refreshSections();
+    renderDeflectedDeckChart();
+    return;
+  }
+
+  const { alignments, errors } = BridgeAlignment.parseAlignments(await readTextFile(file));
+  state.alignments = alignments;
+  errors.forEach((message) => logLine(`Alignment WARNING: ${message}`));
+
+  // Default to the alignment that runs closest to the bridge.
+  let bestIndex = 0;
+  if (alignments.length > 1) {
+    let bestDistance = Infinity;
+    alignments.forEach((alignment, index) => {
+      const distance = bridgeDistanceTo(alignment);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = index;
+      }
+    });
+  }
+
+  populateAlignmentSelect(bestIndex);
+  selectAlignment(bestIndex);
+  ui.alignmentUploadStatus.textContent = `Loaded ${alignments.length} alignment(s) from "${file.name}".`;
+}
+
+function populateAlignmentSelect(selectedIndex = 0) {
+  const select = ui.alignmentSelect;
+  if (!state.alignments.length) {
+    select.innerHTML = '<option value="">(Upload an alignment)</option>';
+    select.disabled = true;
+    return;
+  }
+  select.disabled = false;
+  select.innerHTML = "";
+  state.alignments.forEach((alignment, index) => {
+    const option = document.createElement("option");
+    option.value = String(index);
+    option.textContent =
+      `${alignment.name} (Sta ${BridgeAlignment.formatStation(alignment.staStart)} to ` +
+      `${BridgeAlignment.formatStation(alignment.staEnd)})`;
+    select.appendChild(option);
+  });
+  select.value = String(selectedIndex);
+}
+
+function selectAlignment(index) {
+  const alignment = state.alignments[index];
+  if (!alignment) return;
+  state.alignment = alignment;
+  state.sectionStation = null;
+
+  logLine(
+    `Alignment: "${alignment.name}" - ${alignment.elementCount} element(s), stations ` +
+      `${BridgeAlignment.formatStation(alignment.staStart)} to ${BridgeAlignment.formatStation(alignment.staEnd)}.`,
+  );
+  alignment.warnings.forEach((warning) => logLine(`Alignment WARNING (${alignment.name}): ${warning}`));
+
+  refreshSections();
+  renderDeflectedDeckChart();
+}
+
 function runCalculation() {
   if (!state.sourceRows.length) {
     window.alert("Please upload the input Excel file.");
@@ -1115,6 +1979,7 @@ function runCalculation() {
   // Deflections are about to change, so any deck computed from them is stale.
   state.isopachMesh = null;
   state.deflectedDeck = null;
+  state.planRevision += 1;
 
   const output = [["N", "E", "Elevation (ft)", "Description", "Deflection (ft)", "Camber (ft)"]];
 
@@ -1183,10 +2048,12 @@ function exportTopOfDeckDeflected() {
 
   if (state.deflectedDeck) {
     const girderPoints = state.deflectedDeck.girderPoints ?? {};
+    const edgePoints = state.deflectedDeck.edgePoints ?? [];
     const rows = [
-      ["N", "E", "Deflected Elevation (ft)", "Description", "Deck Elevation (ft)", "Isopach (ft)"],
+      ["N", "E", "Deflected Elevation (ft)", "Description", "Deck Elevation (ft)", "Isopach (ft)", "Note"],
     ];
 
+    let screedRows = 0;
     sortedSpans().forEach((span) => {
       sortedGirders(span).forEach((girder) => {
         (girderPoints[`${span}||${girder}`] ?? []).forEach((point) => {
@@ -1197,9 +2064,28 @@ function exportTopOfDeckDeflected() {
             `${formatSpan(span)}${formatGirder(girder)}${formatInterval(point.interval)}`,
             point.originalZ,
             point.isopach,
+            "",
           ]);
         });
       });
+
+      // Screed points along the overhang edges, after the span's girders.
+      edgePoints
+        .filter((point) => point.span === span)
+        .forEach((point) => {
+          screedRows += 1;
+          rows.push([
+            point.n,
+            point.e,
+            point.deflectedZ,
+            `${formatSpan(span)}${formatGirder(point.girder)}${formatInterval(point.interval)}OH`,
+            point.originalZ,
+            point.isopach,
+            point.extended
+              ? `Overhang edge; deck carried at ${(point.crossSlope * 100).toFixed(2)}% cross slope past the DTM`
+              : "Overhang edge; deck from DTM",
+          ]);
+        });
     });
 
     if (rows.length === 1) {
@@ -1211,7 +2097,11 @@ function exportTopOfDeckDeflected() {
     }
 
     exportRowsAsWorkbook(rows, "ToD Deflected.xlsx");
-    logLine(`Export: wrote ${rows.length - 1} deflected deck points at girder intervals to "ToD Deflected.xlsx".`);
+    logLine(
+      `Export: wrote ${rows.length - 1 - screedRows} deflected deck points at girder intervals` +
+        (screedRows ? ` and ${screedRows} overhang (screed) points` : "") +
+        ' to "ToD Deflected.xlsx".',
+    );
     return;
   }
 
@@ -1261,12 +2151,72 @@ ui.dtmFileInput.addEventListener("change", async () => {
     await loadDtmSurface();
   } catch (error) {
     state.dtm = null;
+    state.dtmTin = null;
     state.deflectedDeck = null;
     ui.dtmUploadStatus.textContent = `Error loading DTM: ${error.message}`;
     logLine(`DTM ERROR: ${error.message}`);
+    refreshSections();
     renderDeflectedDeckChart();
   }
 });
+
+if (ui.overhangInput) {
+  // A new overhang only reshapes the isopach edges, so recompute straight
+  // away when a deck is already showing.
+  ui.overhangInput.addEventListener("change", () => {
+    if (state.deflectedDeck) computeDeflectedDeck();
+  });
+}
+
+if (ui.alignmentFileInput) {
+  ui.alignmentFileInput.addEventListener("change", async () => {
+    try {
+      await loadAlignmentFile();
+    } catch (error) {
+      state.alignments = [];
+      state.alignment = null;
+      populateAlignmentSelect();
+      ui.alignmentUploadStatus.textContent = `Error loading alignment: ${error.message}`;
+      logLine(`Alignment ERROR: ${error.message}`);
+      refreshSections();
+      renderDeflectedDeckChart();
+    }
+  });
+
+  ui.alignmentSelect.addEventListener("change", () => selectAlignment(Number(ui.alignmentSelect.value)));
+  ui.sectionIntervalInput.addEventListener("change", () => {
+    refreshSections();
+    renderDeflectedDeckChart();
+  });
+  ui.sectionStationSelect.addEventListener("change", () => showSectionAt(Number(ui.sectionStationSelect.value)));
+  document.getElementById("sectionPrevBtn").addEventListener("click", () => stepSection(-1));
+  document.getElementById("sectionNextBtn").addEventListener("click", () => stepSection(1));
+
+  const goToStation = () => {
+    if (!state.alignment) {
+      window.alert("Please upload a civil alignment first.");
+      return;
+    }
+    const station = BridgeAlignment.parseStation(ui.sectionStationInput.value);
+    if (station === null) {
+      window.alert("Enter a station such as 12+34.50 or 1234.50.");
+      return;
+    }
+    if (station < state.alignment.staStart - 1e-6 || station > state.alignment.staEnd + 1e-6) {
+      window.alert(
+        `Station ${BridgeAlignment.formatStation(station)} is outside the alignment ` +
+          `(${BridgeAlignment.formatStation(state.alignment.staStart)} to ` +
+          `${BridgeAlignment.formatStation(state.alignment.staEnd)}).`,
+      );
+      return;
+    }
+    showSectionAt(station);
+  };
+  document.getElementById("sectionGoBtn").addEventListener("click", goToStation);
+  ui.sectionStationInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") goToStation();
+  });
+}
 
 ui.graphSpanSelect.addEventListener("change", () => {
   populateGirderSelect(ui.graphSpanSelect.value, ui.graphGirderSelect);
@@ -1308,6 +2258,11 @@ if (ui.deckChart) {
   ui.deckChart.addEventListener("plotly_click", (event) => {
     if (event?.event?.button !== 0) return;
     const payload = event?.points?.[0]?.customdata;
+    // The alignment trace carries [station]; girders carry [span, girder].
+    if (Array.isArray(payload) && payload.length === 1 && Number.isFinite(payload[0])) {
+      showSectionAt(nearestListedStation(payload[0]));
+      return;
+    }
     if (!payload || payload.length !== 2) return;
     const [span, girder] = payload;
     if (ui.deckSpanSelect.value !== span) {
@@ -1327,3 +2282,4 @@ if (computeDeckBtn) {
 }
 
 setProgress(0, "Waiting for input");
+refreshSections();
