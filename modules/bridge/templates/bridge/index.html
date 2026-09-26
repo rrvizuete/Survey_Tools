@@ -117,13 +117,25 @@
         </section>
 
         <section id="panelExport" class="d-none">
-          <div class="row g-3 align-items-end mb-3">
-            <div class="col-12 col-lg-8">
+          <div class="row g-3 align-items-start mb-3">
+            <div class="col-12 col-lg-6">
               <label for="dtmFileInput" class="form-label">Top of Deck DTM (LandXML surface)</label>
               <input class="form-control" id="dtmFileInput" type="file" accept=".xml" />
               <p id="dtmUploadStatus" class="status-message mt-1 mb-0"></p>
             </div>
-            <div class="col-12 col-lg-4 d-grid">
+            <div class="col-12 col-md-6 col-lg-2">
+              <label for="overhangInput" class="form-label">Overhang offset (ft)</label>
+              <input
+                class="form-control"
+                id="overhangInput"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="Girder spacing"
+                title="Distance from the exterior girder centerline to the deck edge, measured square to the girder. Blank uses the adjacent girder spacing."
+              />
+            </div>
+            <div class="col-12 col-md-6 col-lg-4 d-grid label-offset">
               <button id="computeDeckBtn" class="btn btn-primary" type="button">Compute Deflected Deck</button>
             </div>
           </div>

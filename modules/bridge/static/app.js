@@ -18,10 +18,15 @@ const HELP_TEXT = `1. Data & Calculation Tab:
    - Upload the theoretical (undeflected) top-of-deck DTM as a LandXML surface.
    - Compute Deflected Deck builds an isopach surface from the girder deflections and
      adds it to each DTM point: Deflected Z = DTM Z + isopach.
-   - Deck overhangs hold the deflection of the exterior girder they cantilever from.
-     Past the span ends there is no isopach data, so those points keep their DTM elevation.
-   - The plan view shows the deck outline and all girders. Pick a Span/Girder to highlight
-     it and label the deflected elevations along it; every point shows values on hover.
+   - Deck overhangs hold the deflection of the exterior girder they cantilever from, so
+     the deck keeps its cross slope across the overhang.
+   - Overhang offset (ft) is the distance from the exterior girder centerline to the deck
+     edge, measured square to the girder. Leave it blank to use the adjacent girder spacing.
+     Deck points beyond the overhang edge, or past the span ends, have no isopach data and
+     keep their DTM elevation, so set the offset to reach at least the deck edge.
+   - The plan view shows the deck outline, all girders, and the overhang edges (dashed).
+     Pick a Span/Girder to highlight it and label the deflected elevations along it; every
+     point shows values on hover.
    - Export Top of Deck Deflected points writes N, E, deflected elevation, description,
      original elevation, and the isopach value applied.
 
@@ -124,6 +129,7 @@ const ui = {
   deckGirderSelect: document.getElementById("deckGirderSelect"),
   deckChart: document.getElementById("deckChart"),
   deckStatus: document.getElementById("deckStatus"),
+  overhangInput: document.getElementById("overhangInput"),
 };
 
 function setProgress(percent, text) {
@@ -712,6 +718,17 @@ async function loadDtmSurface() {
   renderDeflectedDeckChart();
 }
 
+/** Blank means "use the girder spacing"; returns null in that case. */
+function readOverhangOffset() {
+  const raw = String(ui.overhangInput?.value ?? "").trim();
+  if (!raw) return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error("Overhang offset must be a number of feet, 0 or greater (or blank to use the girder spacing).");
+  }
+  return value > 0 ? value : null;
+}
+
 function getDeckOutlineRings() {
   const surface = state.dtm;
   if (!surface) return [];
@@ -766,12 +783,26 @@ function computeDeflectedDeck() {
     return false;
   }
 
+  let overhangOffset;
+  try {
+    overhangOffset = readOverhangOffset();
+  } catch (error) {
+    window.alert(error.message);
+    return false;
+  }
+
   const mesh = BridgeIsopach.buildIsopachMesh({
     spanToGirders: state.spanToGirders,
     girderGeometry: state.girderGeometry,
     profiles: state.profiles,
+    overhangOffset,
   });
   mesh.warnings.forEach((warning) => logLine(`Isopach WARNING: ${warning}`));
+  logLine(
+    overhangOffset === null
+      ? "Isopach: overhang edge set one girder spacing outside the exterior girders (no overhang offset given)."
+      : `Isopach: overhang edge set ${overhangOffset.toFixed(3)} ft outside the exterior girder centerlines.`,
+  );
 
   if (!mesh.triangleCount) {
     window.alert("The isopach surface is empty. At least one span needs two or more girders.");
@@ -976,6 +1007,17 @@ function renderDeflectedDeckChart() {
         customdata: geometry.planCenterline.map(() => [span, girder]),
         hovertemplate: `Span ${span}<br>Girder ${girder}<extra></extra>`,
       });
+    });
+  });
+
+  (state.deflectedDeck ? state.isopachMesh?.overhangEdges ?? [] : []).forEach((edge) => {
+    traces.push({
+      x: edge.points.map((point) => point.e),
+      y: edge.points.map((point) => point.n),
+      mode: "lines",
+      line: { width: 2, color: "#fd7e14", dash: "dash" },
+      name: `Span ${edge.span} - overhang edge at Girder ${edge.girder}`,
+      hovertemplate: `Span ${edge.span}<br>Overhang edge (Girder ${edge.girder})<extra></extra>`,
     });
   });
 
@@ -1267,6 +1309,14 @@ ui.dtmFileInput.addEventListener("change", async () => {
     renderDeflectedDeckChart();
   }
 });
+
+if (ui.overhangInput) {
+  // A new overhang only reshapes the isopach edges, so recompute straight
+  // away when a deck is already showing.
+  ui.overhangInput.addEventListener("change", () => {
+    if (state.deflectedDeck) computeDeflectedDeck();
+  });
+}
 
 ui.graphSpanSelect.addEventListener("change", () => {
   populateGirderSelect(ui.graphSpanSelect.value, ui.graphGirderSelect);

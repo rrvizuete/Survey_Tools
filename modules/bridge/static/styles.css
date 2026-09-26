@@ -16,6 +16,14 @@
   max-width: none;
 }
 
+/* Rows that align inputs to the top (so status text below one input does not
+   push its neighbours down) still need buttons level with the input boxes. */
+@media (min-width: 768px) {
+  .label-offset {
+    padding-top: calc(0.92rem * 1.5 + 0.3rem);
+  }
+}
+
 .app-title {
   font-size: 1.5rem;
 }
