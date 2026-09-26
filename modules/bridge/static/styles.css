@@ -173,28 +173,3 @@
 .chart-frame-section {
   height: clamp(460px, 62vh, 900px);
 }
-
-.help-modal-content {
-  border: none;
-  border-radius: 0.8rem;
-  overflow: hidden;
-  box-shadow: 0 0.75rem 2rem rgba(18, 40, 66, 0.16);
-}
-
-.help-modal-header {
-  background: linear-gradient(90deg, #123f72, #1b5ba3);
-  color: #fff;
-}
-
-.help-modal-header .btn-close {
-  filter: invert(1);
-}
-
-.help-text {
-  white-space: pre-wrap;
-  font-size: 0.9rem;
-  line-height: 1.5;
-  margin: 0;
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-  color: #2f3b4a;
-}

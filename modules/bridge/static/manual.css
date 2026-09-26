@@ -1,0 +1,541 @@
+/* User manual for the Bridge Superstructure tool. Unlayered, so it overrides
+   the shared Tailwind base/component styles (which sit in CSS layers). */
+
+.manual {
+  --m-ink: #172033;
+  --m-muted: #5b6b80;
+  --m-navy: #0b1728;
+  --m-navy-2: #17365f;
+  --m-blue: #246da5;
+  --m-blue-soft: #edf6fc;
+  --m-line: #dfe5ec;
+  --m-surface: #ffffff;
+  --m-note: #edf6fc;
+  --m-warn: #fdf1de;
+  --m-warn-ink: #7a4a0c;
+  --m-good: #e6f4ec;
+  --m-good-ink: #1d5c40;
+  --m-deck: #b9c6d6;
+  --m-deflected: #c0392b;
+  --m-original: #1b5ba3;
+  --m-screed: #d9730d;
+
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+  color: var(--m-ink);
+}
+
+/* ---------- Cover ---------- */
+
+.manual-cover {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 34px 38px;
+  border-radius: 14px;
+  background: linear-gradient(120deg, var(--m-navy) 0%, var(--m-navy-2) 62%, #245a8e 100%);
+  color: #fff;
+  box-shadow: 0 7px 22px rgba(11, 23, 40, 0.12);
+}
+
+.manual-cover .eyebrow {
+  margin: 0 0 6px;
+  color: #9fc3e6;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.manual-cover h1 {
+  margin: 0;
+  color: #fff;
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.manual-cover p {
+  max-width: 62ch;
+  margin: 10px 0 0;
+  color: #d4e3f2;
+}
+
+.manual-cover-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.manual-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.manual-button:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.manual-button-solid {
+  border-color: #fff;
+  background: #fff;
+  color: var(--m-navy-2);
+}
+
+.manual-button-solid:hover {
+  background: #e8f1fa;
+}
+
+/* ---------- Table of contents ---------- */
+
+.manual-toc {
+  position: sticky;
+  top: 20px;
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  padding: 18px 14px;
+  border: 1px solid var(--m-line);
+  border-radius: 12px;
+  background: var(--m-surface);
+}
+
+.manual-toc-title {
+  margin: 0 0 10px 8px;
+  color: var(--m-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.manual-toc ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: toc;
+}
+
+.manual-toc li {
+  counter-increment: toc;
+}
+
+.manual-toc a {
+  display: flex;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: var(--m-ink);
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.manual-toc a::before {
+  content: counter(toc);
+  min-width: 18px;
+  color: var(--m-blue);
+  font-weight: 700;
+}
+
+.manual-toc a:hover,
+.manual-toc a.is-active {
+  background: var(--m-blue-soft);
+  color: var(--m-navy-2);
+}
+
+/* ---------- Body ---------- */
+
+.manual-body {
+  min-width: 0;
+}
+
+.manual-section {
+  margin-bottom: 26px;
+  padding: 30px 34px;
+  border: 1px solid var(--m-line);
+  border-radius: 12px;
+  background: var(--m-surface);
+  scroll-margin-top: 20px;
+}
+
+.manual-section > h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--m-line);
+  color: var(--m-navy-2);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.manual-section > h2 .num {
+  color: var(--m-blue);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.manual-section h3 {
+  margin: 24px 0 8px;
+  color: var(--m-navy-2);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.manual-section p,
+.manual-section li {
+  max-width: 78ch;
+  line-height: 1.65;
+}
+
+.manual-section p {
+  margin: 0 0 12px;
+}
+
+/* Tailwind's preflight strips list markers; put them back for prose lists. */
+.manual-section ul,
+.manual-section ol {
+  margin: 0 0 12px;
+  padding-left: 22px;
+}
+
+.manual-section ul:not(.manual-steps) {
+  list-style: disc;
+}
+
+.manual-section ol:not(.manual-steps) {
+  list-style: decimal;
+}
+
+.manual-section li::marker {
+  color: var(--m-blue);
+  font-weight: 700;
+}
+
+.manual-section li + li {
+  margin-top: 4px;
+}
+
+.manual-section a {
+  color: var(--m-blue);
+}
+
+.manual kbd,
+.manual .ui {
+  padding: 1px 6px;
+  border: 1px solid var(--m-line);
+  border-radius: 5px;
+  background: #f7f9fb;
+  color: var(--m-navy-2);
+  font-family: inherit;
+  font-size: 0.92em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ---------- Steps ---------- */
+
+.manual-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px;
+  margin: 16px 0 6px;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.manual-steps li {
+  position: relative;
+  max-width: none;
+  margin: 0;
+  padding: 16px 16px 16px 58px;
+  border: 1px solid var(--m-line);
+  border-radius: 10px;
+  background: #fafcfe;
+  counter-increment: step;
+  line-height: 1.5;
+}
+
+.manual-steps li::before {
+  content: counter(step);
+  position: absolute;
+  top: 15px;
+  left: 16px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--m-navy-2);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.manual-steps strong {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--m-navy-2);
+}
+
+.manual-steps span {
+  color: var(--m-muted);
+  font-size: 14px;
+}
+
+/* ---------- Callouts ---------- */
+
+.callout {
+  max-width: 78ch;
+  margin: 14px 0;
+  padding: 12px 16px;
+  border-left: 4px solid var(--m-blue);
+  border-radius: 0 8px 8px 0;
+  background: var(--m-note);
+  line-height: 1.6;
+}
+
+.callout strong:first-child {
+  margin-right: 4px;
+}
+
+.callout-warn {
+  border-left-color: #ad6b18;
+  background: var(--m-warn);
+  color: var(--m-warn-ink);
+}
+
+.callout-good {
+  border-left-color: #287a55;
+  background: var(--m-good);
+  color: var(--m-good-ink);
+}
+
+/* ---------- Tables ---------- */
+
+.manual-table-wrap {
+  margin: 12px 0 16px;
+  overflow-x: auto;
+  border: 1px solid var(--m-line);
+  border-radius: 10px;
+}
+
+.manual .manual-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--m-surface);
+  font-size: 14px;
+}
+
+.manual .manual-table th,
+.manual .manual-table td {
+  padding: 9px 12px;
+  border: 0;
+  border-bottom: 1px solid #edf1f5;
+  text-align: left;
+  vertical-align: top;
+  white-space: normal;
+  line-height: 1.5;
+}
+
+.manual .manual-table th {
+  position: static;
+  background: #f4f7fa;
+  color: #3c4a60;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.manual .manual-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.manual .manual-table td:first-child {
+  font-weight: 600;
+}
+
+.manual .manual-table .nowrap {
+  white-space: nowrap;
+}
+
+.tag {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #edf1f5;
+  color: #465267;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.tag-required {
+  background: #fbe9ea;
+  color: #8f2830;
+}
+
+.tag-optional {
+  background: var(--m-good);
+  color: var(--m-good-ink);
+}
+
+/* ---------- Figures ---------- */
+
+.manual-figure {
+  margin: 18px 0;
+  padding: 18px;
+  border: 1px solid var(--m-line);
+  border-radius: 10px;
+  background: #fafcfe;
+}
+
+.manual-figure svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.manual-figure figcaption {
+  margin-top: 10px;
+  color: var(--m-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.figure-label {
+  fill: var(--m-ink);
+  font: 600 13px Inter, "Segoe UI", sans-serif;
+}
+
+.figure-note {
+  fill: var(--m-muted);
+  font: 12px Inter, "Segoe UI", sans-serif;
+}
+
+/* ---------- Point code anatomy ---------- */
+
+.code-anatomy {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.code-part {
+  min-width: 96px;
+  padding: 10px 14px;
+  border: 1px solid var(--m-line);
+  border-radius: 10px;
+  background: #fafcfe;
+  text-align: center;
+}
+
+.code-part b {
+  display: block;
+  color: var(--m-navy-2);
+  font: 700 22px ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+
+.code-part span {
+  color: var(--m-muted);
+  font-size: 12px;
+}
+
+/* ---------- Formulas ---------- */
+
+.formula {
+  display: block;
+  max-width: 78ch;
+  margin: 10px 0 14px;
+  padding: 12px 16px;
+  border: 1px solid var(--m-line);
+  border-radius: 8px;
+  background: #f7f9fb;
+  color: var(--m-navy-2);
+  font: 14px/1.7 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  white-space: pre-wrap;
+}
+
+.manual-footer-note {
+  color: var(--m-muted);
+  font-size: 13px;
+}
+
+/* ---------- Responsive & print ---------- */
+
+@media (max-width: 980px) {
+  .manual {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .manual-toc {
+    position: static;
+    max-height: none;
+  }
+
+  .manual-section {
+    padding: 22px 18px;
+  }
+
+  .manual-cover {
+    padding: 26px 22px;
+  }
+}
+
+@media print {
+  .toolbox-bar,
+  .site-footer,
+  .manual-toc,
+  .manual-cover-actions {
+    display: none !important;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  .manual {
+    display: block;
+  }
+
+  .manual-cover {
+    background: none;
+    color: var(--m-ink);
+    box-shadow: none;
+    border: 0;
+    border-bottom: 2px solid var(--m-navy-2);
+    border-radius: 0;
+    padding: 0 0 12px;
+  }
+
+  .manual-cover h1,
+  .manual-cover p,
+  .manual-cover .eyebrow {
+    color: var(--m-ink);
+  }
+
+  .manual-section {
+    break-inside: avoid-page;
+    border: 0;
+    padding: 12px 0;
+  }
+}

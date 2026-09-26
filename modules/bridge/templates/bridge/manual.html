@@ -1,0 +1,465 @@
+{% extends "base.html" %}
+
+{% block title %}User Manual · Bridge Superstructure · Survey Toolbox{% endblock %}
+
+{% block head_extra %}
+    <link rel="stylesheet" href="{{ url_for('bridge.static', filename='manual.css') }}" />
+{% endblock %}
+
+{% block toolbox_nav_extra %}
+    <a class="toolbox-current" href="{{ url_for('bridge.index') }}">Bridge Superstructure</a>
+    <span class="toolbox-current">User Manual</span>
+{% endblock %}
+
+{% block content %}
+<div class="manual">
+  <header class="manual-cover">
+    <div>
+      <p class="eyebrow">Bridge Superstructure · User Manual</p>
+      <h1>Girder and Top of Deck Deflected Points</h1>
+      <p>
+        How to compute top-of-girder and deflected top-of-deck elevations, extend the deck to the screed,
+        review sections along an alignment, and export survey-ready deliverables.
+      </p>
+    </div>
+    <div class="manual-cover-actions">
+      <a class="manual-button" href="{{ url_for('bridge.index') }}">&larr; Back to the tool</a>
+      <button class="manual-button manual-button-solid" type="button" onclick="window.print()">Print / PDF</button>
+    </div>
+  </header>
+
+  <nav class="manual-toc" aria-label="Contents">
+    <p class="manual-toc-title">Contents</p>
+    <ol>
+      <li><a href="#overview">Overview</a></li>
+      <li><a href="#before-you-start">Before you start</a></li>
+      <li><a href="#girder-calcs">Girder Calcs tab</a></li>
+      <li><a href="#graphs">Graphs tab</a></li>
+      <li><a href="#deflected-deck">Deflected Deck tab</a></li>
+      <li><a href="#overhang">Overhang &amp; screed</a></li>
+      <li><a href="#sections">Alignment sections</a></li>
+      <li><a href="#exports">Exports &amp; point naming</a></li>
+      <li><a href="#methods">Calculation methods</a></li>
+      <li><a href="#troubleshooting">QC &amp; troubleshooting</a></li>
+      <li><a href="#support">Support</a></li>
+    </ol>
+  </nav>
+
+  <main class="manual-body">
+    <!-- 1 -->
+    <section class="manual-section" id="overview">
+      <h2><span class="num">1</span> Overview</h2>
+      <p>
+        This tool turns girder design data into field elevations. It computes the top of each girder, including its
+        dead-load deflection, then applies the same deflection to the theoretical top-of-deck surface. The
+        result is the set of elevations the deck must be built to, so that it reaches its design profile after the
+        girders deflect.
+      </p>
+      <ol class="manual-steps">
+        <li><strong>Girder data</strong><span>Fill in the template and upload it on the Girder Calcs tab.</span></li>
+        <li><strong>Calculate</strong><span>Build top-of-girder points and deflection profiles.</span></li>
+        <li><strong>Deflected deck</strong><span>Upload the deck DTM, set the overhang, and compute.</span></li>
+        <li><strong>Review</strong><span>Check the plan view and sections along an alignment.</span></li>
+        <li><strong>Export</strong><span>Download points (Excel) and the deflected surface (LandXML).</span></li>
+      </ol>
+      <p>All work happens in your browser; files are not uploaded to a server.</p>
+    </section>
+
+    <!-- 2 -->
+    <section class="manual-section" id="before-you-start">
+      <h2><span class="num">2</span> Before you start</h2>
+      <div class="manual-table-wrap">
+        <table class="manual-table">
+          <thead>
+            <tr><th>File</th><th>Format</th><th>Used for</th><th></th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Girder data sheet</td>
+              <td class="nowrap">Excel (.xlsx / .xls)</td>
+              <td>Girder geometry, supports, and deflections. Start from <span class="ui">Download Template</span>.</td>
+              <td><span class="tag tag-required">Required</span></td>
+            </tr>
+            <tr>
+              <td>Top of deck DTM</td>
+              <td class="nowrap">LandXML surface (.xml)</td>
+              <td>The theoretical (undeflected) finished deck, as a TIN with faces, e.g. exported from Civil 3D.</td>
+              <td><span class="tag tag-required">Deflected deck</span></td>
+            </tr>
+            <tr>
+              <td>Civil alignment</td>
+              <td class="nowrap">LandXML alignment (.xml)</td>
+              <td>Cutting sections across the deck. A file can hold several alignments.</td>
+              <td><span class="tag tag-optional">Optional</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout callout-warn">
+        <strong>Same coordinate system.</strong> All three files must use the same horizontal coordinates and
+        vertical datum. Lengths are in feet; girder deflection, camber, bearing, and plate heights are in inches.
+      </div>
+    </section>
+
+    <!-- 3 -->
+    <section class="manual-section" id="girder-calcs">
+      <h2><span class="num">3</span> Girder Calcs tab</h2>
+      <ol>
+        <li>Choose <span class="ui">Download Template</span> and fill in one row per girder per span.</li>
+        <li>Upload the completed sheet under <span class="ui">Girder Data Sheet</span>. The rows appear in an editable grid;
+          you can correct values there before calculating.</li>
+        <li>Set <span class="ui">Intervals</span> (1&ndash;250): the number of equal divisions along each girder. Points are
+          produced at every division, so 10 intervals gives 11 stations per girder (00&ndash;10).</li>
+        <li>Choose <span class="ui">Calculate</span>, review the <em>Calculation Log</em>, then
+          <span class="ui">Export Top of Girder Points</span>. Exporting is a separate step, so you can recalculate
+          without downloading each time.</li>
+      </ol>
+
+      <h3>Template columns</h3>
+      <div class="manual-table-wrap">
+        <table class="manual-table">
+          <thead><tr><th>Column</th><th>Unit</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>Span number</td><td>&ndash;</td><td>Label such as <code>A</code> or <code>1</code>. Numbers are padded to two digits in point names. <span class="tag tag-required">Required</span></td></tr>
+            <tr><td>Girder number</td><td>&ndash;</td><td>Padded to two digits in point names. <span class="tag tag-required">Required</span></td></tr>
+            <tr><td>Girder width</td><td>ft</td><td>Top flange width; the L and R points sit half this width either side of the centerline.</td></tr>
+            <tr><td>Girder height</td><td>ft</td><td>Added to seat, bearing, and plate to reach the top of girder.</td></tr>
+            <tr><td>Camber at midspan</td><td>in</td><td>Reported in the export for reference; not added to the elevation.</td></tr>
+            <tr><td>Deflection at midspan</td><td>in</td><td>Dead-load deflection at mid-length. <span class="tag tag-required">Required</span></td></tr>
+            <tr><td>Deflection at quarter span</td><td>in</td><td>Refines the deflection curve fit. <span class="tag tag-optional">Optional</span></td></tr>
+            <tr><td>Deflection at third span</td><td>in</td><td>Refines the deflection curve fit. <span class="tag tag-optional">Optional</span></td></tr>
+            <tr><td>Support1 Northing / Easting</td><td>ft</td><td>Girder centerline at the start support.</td></tr>
+            <tr><td>Support1 Seat Z</td><td>ft</td><td>Bearing seat elevation at the start support.</td></tr>
+            <tr><td>Bearing / Plate height at Support1</td><td>in</td><td>Stacked on the seat.</td></tr>
+            <tr><td>Support2 Northing / Easting / Seat Z</td><td>ft</td><td>As above, at the end support.</td></tr>
+            <tr><td>Bearing / Plate height at Support2</td><td>in</td><td>As above, at the end support.</td></tr>
+            <tr><td>Centerline radius</td><td>ft</td><td>0 or blank for a straight girder. Positive curves clockwise, negative counter-clockwise, looking from Support1 to Support2. <span class="tag tag-optional">Optional</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 4 -->
+    <section class="manual-section" id="graphs">
+      <h2><span class="num">4</span> Graphs tab</h2>
+      <p>
+        The <em>Plan View</em> shows every girder in Northing/Easting. The <em>Deflection Profile</em> shows the
+        selected girder's deflection along its length. Pick a girder with the <span class="ui">Span</span> and
+        <span class="ui">Girder</span> selectors, or click it in the plan; the two views stay in sync.
+      </p>
+      <p>Every chart has a toolbar (top right) to zoom, pan, reset the view, and save an image.</p>
+    </section>
+
+    <!-- 5 -->
+    <section class="manual-section" id="deflected-deck">
+      <h2><span class="num">5</span> Deflected Deck tab</h2>
+      <ol>
+        <li>Run the calculation on the Girder Calcs tab first.</li>
+        <li>Upload the <span class="ui">Top of Deck DTM</span>. The status line confirms the point and face count.</li>
+        <li>Optionally enter an <span class="ui">Overhang offset (ft)</span> &ndash; see <a href="#overhang">Overhang &amp; screed</a>.</li>
+        <li>Choose <span class="ui">Compute Deflected Deck</span>.</li>
+      </ol>
+      <p>
+        The tool builds a deflection (isopach) surface between the girders and adds it to the deck:
+        <strong>deflected elevation = DTM elevation + deflection</strong>. Past the span ends the deflection is zero,
+        so the deck keeps its DTM elevation there.
+      </p>
+      <h3>Reading the plan view</h3>
+      <ul>
+        <li>The colour map shows the deflection across the deck: pale is little or none, deep red the most.</li>
+        <li>Black is the deck outline, grey the girders. Dashed orange lines are the overhang edges (screed lines).</li>
+        <li>Pick a <span class="ui">Span</span>/<span class="ui">Girder</span> (or click a girder) to highlight it and label
+          its deflected deck points with their export names. Hover any point for its elevations.</li>
+      </ul>
+    </section>
+
+    <!-- 6 -->
+    <section class="manual-section" id="overhang">
+      <h2><span class="num">6</span> Overhang &amp; screed</h2>
+      <p>
+        The deck model usually stops at the edge of deck, but the screed rails sit beyond it. The
+        <span class="ui">Overhang offset</span> extends the deflected deck past the model so elevations can be
+        given where the screed runs.
+      </p>
+      <ul>
+        <li>The offset is measured <strong>from the edge of deck</strong> (where the DTM ends), square to the exterior
+          girder.</li>
+        <li>Across the extension, the deck is carried out at its own cross slope, taken from the last 2 ft of the
+          model.</li>
+        <li>The exterior girder's deflection is held across the whole overhang, because the overhang cantilevers from
+          it.</li>
+        <li>Leave the offset blank for no extension.</li>
+      </ul>
+
+      <figure class="manual-figure">
+        <svg viewBox="0 0 900 290" role="img" aria-label="Cross-section of the overhang: the deck model ends at the edge of deck and is carried at its cross slope out to the screed line, one overhang offset beyond it.">
+          <!-- girders -->
+          <g fill="#c7d0dc" stroke="#8a97a8" stroke-width="1.5">
+            <path d="M150 150 h60 v10 h-22 v90 h22 v10 h-60 v-10 h22 v-90 h-22 z" />
+            <path d="M390 144 h60 v10 h-22 v96 h22 v10 h-60 v-10 h22 v-96 h-22 z" />
+          </g>
+          <!-- deck slab (model) -->
+          <path d="M540 118 L90 136 L90 150 L540 132 Z" fill="#dbe4ee" stroke="none" />
+          <line x1="540" y1="118" x2="90" y2="136" stroke="var(--m-original)" stroke-width="3" />
+          <!-- extension carried at cross slope -->
+          <line x1="90" y1="136" x2="30" y2="138.4" stroke="var(--m-original)" stroke-width="3" stroke-dasharray="8 6" />
+          <!-- deflected surface -->
+          <line x1="540" y1="104" x2="90" y2="122" stroke="var(--m-deflected)" stroke-width="2.5" />
+          <line x1="90" y1="122" x2="30" y2="124.4" stroke="var(--m-deflected)" stroke-width="2.5" stroke-dasharray="8 6" />
+          <!-- edge of deck -->
+          <line x1="90" y1="60" x2="90" y2="175" stroke="#172033" stroke-width="1.5" stroke-dasharray="3 4" />
+          <text class="figure-label" x="96" y="72">Edge of deck</text>
+          <text class="figure-note" x="96" y="88">(end of DTM)</text>
+          <!-- screed -->
+          <line x1="30" y1="60" x2="30" y2="175" stroke="var(--m-screed)" stroke-width="2" />
+          <rect x="22" y="110" width="16" height="10" fill="var(--m-screed)" />
+          <text class="figure-label" x="12" y="50" fill="var(--m-screed)">Screed (OH points)</text>
+          <!-- offset dimension -->
+          <line x1="30" y1="200" x2="90" y2="200" stroke="#172033" stroke-width="1.2" marker-start="url(#arrow)" marker-end="url(#arrow)" />
+          <text class="figure-label" x="20" y="222">Overhang offset</text>
+          <!-- girder centerline distance -->
+          <line x1="180" y1="100" x2="180" y2="270" stroke="#8a97a8" stroke-dasharray="6 4" />
+          <text class="figure-note" x="186" y="285">Exterior girder &#8452;</text>
+          <!-- cross slope -->
+          <text class="figure-note" x="236" y="178">Deck model (DTM)</text>
+          <text class="figure-note" x="300" y="98" fill="var(--m-deflected)">Deflected deck = DTM + deflection</text>
+          <!-- legend -->
+          <g transform="translate(610 70)">
+            <line x1="0" y1="0" x2="34" y2="0" stroke="var(--m-original)" stroke-width="3" />
+            <text class="figure-note" x="44" y="4">Original deck (DTM)</text>
+            <line x1="0" y1="26" x2="34" y2="26" stroke="var(--m-deflected)" stroke-width="2.5" />
+            <text class="figure-note" x="44" y="30">Deflected deck</text>
+            <line x1="0" y1="52" x2="34" y2="52" stroke="#6b7a8f" stroke-width="2.5" stroke-dasharray="8 6" />
+            <text class="figure-note" x="44" y="56">Carried at the deck cross slope</text>
+            <line x1="0" y1="78" x2="34" y2="78" stroke="var(--m-screed)" stroke-width="2" />
+            <text class="figure-note" x="44" y="82">Screed line</text>
+          </g>
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="#172033" />
+            </marker>
+          </defs>
+        </svg>
+        <figcaption>Figure 1 &ndash; Section at the exterior girder. Deflection is exaggerated for clarity.</figcaption>
+      </figure>
+
+      <div class="callout">
+        <strong>Where the numbers go.</strong> The overhang edge is exported as <code>OH</code> points at every girder
+        interval, and the deflected surface export (LandXML) runs all the way out to it.
+      </div>
+    </section>
+
+    <!-- 7 -->
+    <section class="manual-section" id="sections">
+      <h2><span class="num">7</span> Alignment sections</h2>
+      <ol>
+        <li>On the Deflected Deck tab, upload a <span class="ui">Civil Alignment (LandXML)</span>. Lines, curves, and
+          clothoid spirals are supported.</li>
+        <li>If the file holds several alignments, choose one from <span class="ui">Alignment</span>. The one running
+          closest to the bridge is selected automatically.</li>
+        <li>Stations across the bridge are listed at the <span class="ui">Section interval</span>. Step through them with
+          the arrows, type one in <span class="ui">Go to station</span> (<code>12+34.50</code> or <code>1234.50</code>),
+          or click the alignment in the plan view.</li>
+      </ol>
+      <p>Each section is cut square to the alignment and shows:</p>
+      <ul>
+        <li>the original deck (blue) and the deflected deck (red), dashed where carried out to the overhang;</li>
+        <li>girders (dotted, labelled <code>G01</code>, <code>G02</code>&hellip;), overhang edges (orange, <code>OH</code>),
+          and the alignment centerline (<code>CL</code>).</li>
+      </ul>
+      <p>Offsets are negative to the left of the alignment and positive to the right. The current section line is
+        drawn on the plan view.</p>
+      <div class="callout callout-warn">
+        <strong>Station equations</strong> in the alignment file are ignored; stations run continuously from the
+        alignment's start station.
+      </div>
+    </section>
+
+    <!-- 8 -->
+    <section class="manual-section" id="exports">
+      <h2><span class="num">8</span> Exports &amp; point naming</h2>
+      <div class="manual-table-wrap">
+        <table class="manual-table">
+          <thead><tr><th>Button</th><th>File</th><th>Contents</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Export Top of Girder Points</td>
+              <td class="nowrap"><code>Top of girder.xlsx</code></td>
+              <td>N, E, Elevation, Description, Deflection (ft), Camber (ft). Two points per interval: the left and right
+                edges of the girder top.</td>
+            </tr>
+            <tr>
+              <td>Export Top of Deck Deflected Points</td>
+              <td class="nowrap"><code>ToD Deflected.xlsx</code></td>
+              <td>N, E, Deflected Elevation, Description, Deck Elevation, Isopach (ft), Note. Deck points directly above
+                the <strong>same left and right positions, with the same names,</strong> as the top-of-girder points. With
+                an overhang offset, <code>OH</code> points follow each span's girders.</td>
+            </tr>
+            <tr>
+              <td>Export Deflected Deck Surface (XML)</td>
+              <td class="nowrap"><code>ToD Deflected Surface.xml</code></td>
+              <td>LandXML TIN of the deflected deck, extended to the overhang offset, for laying out the screed. Keeps the
+                DTM's units.</td>
+            </tr>
+            <tr>
+              <td>Download Log File</td>
+              <td class="nowrap"><code>Log.txt</code></td>
+              <td>The calculation log, including QC checks and warnings.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Point names</h3>
+      <div class="code-anatomy" aria-label="Point name A0100L">
+        <div class="code-part"><b>A</b><span>Span</span></div>
+        <div class="code-part"><b>01</b><span>Girder</span></div>
+        <div class="code-part"><b>00</b><span>Interval</span></div>
+        <div class="code-part"><b>L</b><span>Side: L, R or OH</span></div>
+      </div>
+      <p>
+        <code>L</code> and <code>R</code> are the left and right girder edges, looking from Support1 to Support2.
+        Numeric spans and girders are padded to two digits (span <code>1</code>, girder <code>3</code>, interval
+        <code>5</code>, right edge &rarr; <code>010305R</code>). <code>OH</code> marks the overhang edge beside that
+        exterior girder, e.g. <code>A1005OH</code>.
+      </p>
+
+      <figure class="manual-figure">
+        <svg viewBox="0 0 900 200" role="img" aria-label="Plan of one girder: left and right points at every interval from Support1 to Support2, with overhang points further out.">
+          <line x1="80" y1="40" x2="820" y2="40" stroke="var(--m-screed)" stroke-width="2" stroke-dasharray="8 6" />
+          <rect x="80" y="84" width="740" height="32" fill="#dbe4ee" stroke="#8a97a8" />
+          <line x1="80" y1="100" x2="820" y2="100" stroke="#8a97a8" stroke-dasharray="6 4" />
+          <g font-family="Inter, Segoe UI, sans-serif">
+            <g fill="#1b5ba3">
+              <circle cx="80" cy="84" r="5" /><circle cx="228" cy="84" r="5" /><circle cx="376" cy="84" r="5" /><circle cx="524" cy="84" r="5" /><circle cx="672" cy="84" r="5" /><circle cx="820" cy="84" r="5" />
+              <circle cx="80" cy="116" r="5" /><circle cx="228" cy="116" r="5" /><circle cx="376" cy="116" r="5" /><circle cx="524" cy="116" r="5" /><circle cx="672" cy="116" r="5" /><circle cx="820" cy="116" r="5" />
+            </g>
+            <g fill="var(--m-screed)">
+              <rect x="75" y="35" width="10" height="10" /><rect x="223" y="35" width="10" height="10" /><rect x="371" y="35" width="10" height="10" /><rect x="519" y="35" width="10" height="10" /><rect x="667" y="35" width="10" height="10" /><rect x="815" y="35" width="10" height="10" />
+            </g>
+            <text class="figure-label" x="92" y="78">A0100L</text>
+            <text class="figure-label" x="92" y="136">A0100R</text>
+            <text class="figure-label" x="92" y="30" fill="var(--m-screed)">A0100OH</text>
+            <text class="figure-label" x="236" y="78">A0101L</text>
+            <text class="figure-label" x="236" y="136">A0101R</text>
+            <text class="figure-note" x="40" y="178">Support1</text>
+            <text class="figure-note" x="790" y="178">Support2</text>
+            <line x1="380" y1="170" x2="520" y2="170" stroke="#172033" stroke-width="1.2" marker-end="url(#arrow2)" />
+            <text class="figure-note" x="530" y="174">direction of travel</text>
+          </g>
+          <defs>
+            <marker id="arrow2" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="#172033" />
+            </marker>
+          </defs>
+        </svg>
+        <figcaption>Figure 2 &ndash; Plan of an exterior girder (girder 01, span A). Blue: top-of-girder and deflected deck
+          points (same positions and names in both exports). Orange: overhang (screed) points.</figcaption>
+      </figure>
+    </section>
+
+    <!-- 9 -->
+    <section class="manual-section" id="methods">
+      <h2><span class="num">9</span> Calculation methods</h2>
+
+      <h3>Girder geometry</h3>
+      <p>
+        Each girder runs from Support1 to Support2 along a straight chord, or a circular arc when a radius is given.
+        Position along it is expressed as <em>t</em>, from 0 at Support1 to 1 at Support2. The left and right points
+        are half the girder width either side of the centerline, square to it.
+      </p>
+
+      <h3>Deflection curve</h3>
+      <p>The deflection is a parabola that is zero at both supports, fitted by least squares to the values given:</p>
+      <code class="formula">d(t) = A &middot; (t&sup2; &minus; t)
+A = &Sigma; v&#7522;&middot;b&#7522; / &Sigma; b&#7522;&sup2;,   b&#7522; = t&#7522;&sup2; &minus; t&#7522;
+t = 1/2 (midspan, required), 1/4 and 1/3 (optional)</code>
+
+      <h3>Top of girder</h3>
+      <code class="formula">Elevation = Seat Z + Bearing + Plate + Girder height + d(t)</code>
+      <p>Seat Z, bearing, and plate heights are interpolated linearly between the supports. Camber is reported but not
+        added.</p>
+
+      <h3>Deflected deck</h3>
+      <p>
+        Girder deflections are joined into a triangulated surface between neighbouring girders at matching intervals
+        (the isopach). The deck is then
+      </p>
+      <code class="formula">Deflected Z = DTM Z + isopach(N, E)</code>
+      <p>The overhang holds the exterior girder's deflection. Beyond the span ends the isopach is zero.</p>
+
+      <h3>Overhang extension</h3>
+      <code class="formula">Z(screed) = Z(edge of deck) + s &middot; offset
+s = cross slope over the last 2 ft of the deck model, square to the girder</code>
+
+      <h3>Deflected surface export</h3>
+      <p>
+        Deck DTM triangles can be tens of feet long, while the deflection curves along the span. To capture it, each
+        DTM triangle is cut on a 5 ft plan grid. Every piece keeps its DTM triangle's plane, so crowns and breaklines
+        are unchanged, and the deflection is added at every vertex. A strip is then added along both deck edges out to
+        the overhang offset. The result is a single, crack-free TIN.
+      </p>
+    </section>
+
+    <!-- 10 -->
+    <section class="manual-section" id="troubleshooting">
+      <h2><span class="num">10</span> QC &amp; troubleshooting</h2>
+      <p>Check the <em>Calculation Log</em> after each step. Common messages:</p>
+      <div class="manual-table-wrap">
+        <table class="manual-table">
+          <thead><tr><th>Message or symptom</th><th>What it means / what to do</th></tr></thead>
+          <tbody>
+            <tr><td>DTM WARNING: surface only overlaps the girders when N and E are swapped</td>
+              <td>The DTM was exported as E N Z instead of N E Z. Re-export it, or check the exporter settings.</td></tr>
+            <tr><td>QC WARNING: the entire DTM sits below the top of girder</td>
+              <td>The file is probably not the finished top of deck, or it uses a different vertical datum or units.</td></tr>
+            <tr><td>Deflected deck ERROR: DTM extents do not overlap the girder extents</td>
+              <td>The DTM and girder sheet are in different coordinate systems.</td></tr>
+            <tr><td>Isopach WARNING: needs at least two girders</td>
+              <td>A span has a single girder; deflection is treated as zero across it.</td></tr>
+            <tr><td>Overhang WARNING: the DTM does not cover this exterior girder</td>
+              <td>The edge of deck could not be found, so the offset is measured from the girder centerline instead.</td></tr>
+            <tr><td>The bridge is not alongside this alignment</td>
+              <td>The chosen alignment ends at or crosses the bridge. Choose one that runs along the deck.</td></tr>
+            <tr><td>Station &hellip; does not cross the deck or any girder</td>
+              <td>The station is off the bridge; pick one from the list.</td></tr>
+            <tr><td>New buttons or inputs are missing after an update</td>
+              <td>Restart the server and reload the page with <kbd>Ctrl</kbd>+<kbd>F5</kbd>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 11 -->
+    <section class="manual-section" id="support">
+      <h2><span class="num">11</span> Support</h2>
+      <p>For questions, issues, or suggestions, contact <strong>Rafa Ramirez</strong>.</p>
+      <p class="manual-footer-note">Include the <code>Log.txt</code> file and, if possible, the input files with any report.</p>
+    </section>
+  </main>
+</div>
+{% endblock %}
+
+{% block footer_tagline %}bridge superstructure user manual{% endblock %}
+
+{% block scripts %}
+<script>
+  // Highlight the section currently in view in the table of contents.
+  (function () {
+    const links = Array.from(document.querySelectorAll(".manual-toc a"));
+    const byId = new Map(links.map((link) => [link.getAttribute("href").slice(1), link]));
+    if (!("IntersectionObserver" in window)) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          links.forEach((link) => link.classList.remove("is-active"));
+          byId.get(entry.target.id)?.classList.add("is-active");
+        });
+      },
+      { rootMargin: "-20% 0px -70% 0px" },
+    );
+    document.querySelectorAll(".manual-section").forEach((section) => observer.observe(section));
+  })();
+</script>
+{% endblock %}

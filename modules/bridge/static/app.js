@@ -1,56 +1,3 @@
-const HELP_TEXT = `1. Data & Calculation Tab:
-   - Download Template to get the input Excel format.
-   - Upload the completed "Girder Data sheet" file.
-   - Review imported rows in the editable grid and adjust values before calculation.
-   - Set "Centerline radius (ft)" per girder: 0 or blank means straight, positive is clockwise, negative is counterclockwise (from Support1 to Support2).
-   - Set the number of intervals and choose Calculate.
-   - Export Top of Girder Points once you are satisfied with the results (a separate
-     step from calculating, so you can re-run the calculation without re-downloading).
-   - The Calculation Log is displayed in this same tab and can be downloaded.
-
-2. Graphs Tab:
-   - Includes synchronized Deflection Profile and Plan View plots.
-   - The plan uses Northing (N) and Easting (E) as coordinates.
-   - Select Span/Girder from the selectors or click a girder in plan view.
-   - Selected girder is highlighted, and the profile updates automatically.
-
-3. Deflected Deck Tab:
-   - Upload the theoretical (undeflected) top-of-deck DTM as a LandXML surface.
-   - Compute Deflected Deck builds an isopach surface from the girder deflections and
-     adds it to each DTM point: Deflected Z = DTM Z + isopach.
-   - Deck overhangs hold the deflection of the exterior girder they cantilever from, so
-     the deck keeps its cross slope across the overhang.
-   - Overhang offset (ft) is the distance from the exterior girder centerline to the line
-     where elevations are needed beyond the deck model (e.g. where the screed sits),
-     measured square to the girder. Past the DTM edge the deck is carried out at its own
-     cross slope (taken from the last 2 ft of the model), and the exterior girder's
-     deflection is added. Leave it blank for no extension.
-   - The plan view shows the deck outline, all girders, and the overhang edges (dashed
-     orange). Pick a Span/Girder to highlight it and label the deflected elevations along
-     it; every point, including the overhang edge points, shows values on hover.
-   - Export Top of Deck Deflected points writes N, E, deflected elevation, description,
-     deck elevation, and the isopach value applied at every girder interval. With an
-     overhang offset it also writes the overhang edge points (description ending in "OH",
-     e.g. A0100OH), noting whether their deck elevation was carried at the cross slope.
-
-4. Alignment Sections (Deflected Deck Tab):
-   - Upload a civil alignment as LandXML (<Alignment> with lines, curves, and spirals).
-     If the file holds several alignments, choose one from the list.
-   - Stations are listed at the Section interval across the bridge. Step through them with
-     the arrows, type any station in "Go to station" (12+34.50 or 1234.50), or click the
-     alignment in the plan view.
-   - Each section is cut square to the alignment. It shows the original DTM surface (blue)
-     and the deflected surface (red), with the girders (dotted) and the overhang edges
-     (dashed orange) marked. Offsets are negative left and positive right of the alignment.
-   - The plan view draws the alignment and the current section line.
-
-5. Notes:
-   - Deflection at midspan is required.
-   - Deflection at quarter-span and third-span are optional.
-   - Ensure all files use the same coordinate system.
-
-For further assistance, please reach out to Rafa Ramirez.`;
-
 const TEMPLATE_HEADERS = [
   "Span number",
   "Girder number",
@@ -78,7 +25,7 @@ const TEMPLATE_HEADERS = [
 // without losing information. Parallel array, same length/order as
 // TEMPLATE_HEADERS (which stays unabbreviated for the downloaded template
 // workbook). The full "0=straight, +CW, -CCW" note is dropped from the
-// on-screen column since it is already covered in the Help modal.
+// on-screen column since it is already covered in the user manual.
 const GRID_HEADER_DISPLAY = [
   { concept: "Span number" },
   { concept: "Girder number" },
@@ -128,7 +75,6 @@ const state = {
 };
 
 const ui = {
-  helpText: document.getElementById("helpText"),
   tabDataBtn: document.getElementById("tabDataBtn"),
   tabGraphsBtn: document.getElementById("tabGraphsBtn"),
   tabExportBtn: document.getElementById("tabExportBtn"),
@@ -2287,7 +2233,6 @@ function downloadLog() {
   triggerDownload(url, "Log.txt");
 }
 
-ui.helpText.textContent = HELP_TEXT;
 renderSourceGrid();
 
 ui.tabDataBtn.addEventListener("click", () => activateTab("data"));

@@ -20,7 +20,7 @@
 
 {% block content %}
       <section class="bridge-panel bg-white shadow-sm rounded-3 p-3 p-lg-4 position-relative">
-        <button class="btn btn-help" data-bs-toggle="modal" data-bs-target="#helpModal" type="button">Help</button>
+        <a class="btn btn-help" href="{{ url_for('bridge.manual') }}" target="_blank" rel="noopener">Help</a>
 
         <header class="text-center mb-3">
           <h1 class="app-title fw-bold mb-2">Girder and Top of Deck Deflected points</h1>
@@ -215,25 +215,11 @@
           <div id="sectionChart" class="chart-frame chart-frame-section"></div>
         </section>
       </section>
-
-    <div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalLabel" aria-hidden="true">
-      <div class="modal-dialog modal-lg modal-dialog-scrollable">
-        <div class="modal-content help-modal-content">
-          <div class="modal-header help-modal-header">
-            <h2 class="modal-title" id="helpModalLabel">Girder and Top of Deck Deflected points - Help</h2>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <pre class="help-text mb-0" id="helpText"></pre>
-          </div>
-        </div>
-      </div>
-    </div>
 {% endblock %}
 
 {% block footer_tagline %}girder deflection &amp; deck geometry workspace{% endblock %}
 {% block footer_extra %}
-        <a href="#" data-bs-toggle="modal" data-bs-target="#helpModal">Input guide &amp; method reference</a>
+        <a href="{{ url_for('bridge.manual') }}" target="_blank" rel="noopener">User manual</a>
 {% endblock %}
 
 {% block scripts %}

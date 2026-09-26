@@ -47,6 +47,17 @@ class BridgeRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Girder and Top of Deck Deflected points", response.data)
 
+    def test_help_opens_the_user_manual(self):
+        index = self.client.get("/bridge/")
+        self.assertIn(b'href="/bridge/manual"', index.data)
+
+        response = self.client.get("/bridge/manual")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"User Manual", response.data)
+        for anchor in (b'id="overhang"', b'id="exports"', b'id="methods"', b'id="troubleshooting"'):
+            self.assertIn(anchor, response.data)
+
     def test_health_endpoint(self):
         response = self.client.get("/bridge/api/health")
 
