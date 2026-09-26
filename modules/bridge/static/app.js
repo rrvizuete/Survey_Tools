@@ -48,18 +48,67 @@ const GRID_HEADER_DISPLAY = [
   { concept: "Centerline radius", meta: "(ft) [optional]" },
 ];
 
-// Shared across every Plotly chart so the view tools (pan, zoom, reset,
-// download) look and behave identically everywhere, always shown.
-const PLOTLY_CONFIG = { responsive: true, displaylogo: false, displayModeBar: true };
+// Zoom window: drag a box corner to corner and the view zooms to exactly that
+// box. Plotly's own zoom snaps a thin box to one axis and reshapes the box on
+// equal-aspect charts (the plan views), so the window is drawn with a
+// select-drag instead and applied in enableZoomWindow.
+const ZOOM_WINDOW_BUTTON = {
+  name: "zoomWindow",
+  title: "Zoom window (drag a diagonal)",
+  icon: Plotly.Icons.zoombox,
+  attr: "dragmode",
+  val: "select",
+  click: (gd) => Plotly.relayout(gd, { dragmode: "select" }),
+};
+
+// Shared across every Plotly chart so the view tools (zoom window, pan,
+// zoom in/out, reset, download) look and behave identically everywhere.
+const PLOTLY_CONFIG = {
+  responsive: true,
+  displaylogo: false,
+  displayModeBar: true,
+  modeBarButtonsToRemove: ["zoom2d", "select2d", "lasso2d", "autoScale2d"],
+  modeBarButtonsToAdd: [ZOOM_WINDOW_BUTTON],
+};
 
 // Spread into every chart layout. Plotly draws with its own default font
 // unless told otherwise; use the app-wide Inter (annotation and trace text
-// inherit it). The view tools sit in a horizontal strip, placed top left by
-// styles.css.
+// inherit it). The view tools sit in a horizontal strip (placed top left by
+// styles.css) and the zoom window is the default drag.
 const PLOTLY_LAYOUT = {
   font: { family: "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" },
   modebar: { orientation: "h" },
+  dragmode: "select",
+  // "d": the box is always the rectangle on the drag's diagonal. ("any" turns
+  // a thin drag into a full-width or full-height band.)
+  selectdirection: "d",
+  newselection: { line: { color: "#0d6efd", width: 1.5, dash: "dash" } },
+  activeselection: { fillcolor: "#0d6efd", opacity: 0.08 },
 };
+
+/**
+ * Turns a finished select-drag into a zoom to exactly that box, then clears
+ * the selection so no points stay dimmed. Plotly.newPlot drops a chart's
+ * event listeners, so this runs after every render.
+ */
+function enableZoomWindow(gd) {
+  // Read the drawn box from the layout's selections rather than the
+  // plotly_selected event: that event carries no range when the box holds no
+  // data points, which is common when zooming into empty space.
+  gd.removeAllListeners?.("plotly_relayout");
+  gd.on("plotly_relayout", (update) => {
+    const box = update?.selections?.[0];
+    if (!box || box.type !== "rect") return;
+    const [x0, x1] = [box.x0, box.x1].map(Number).sort((a, b) => a - b);
+    const [y0, y1] = [box.y0, box.y1].map(Number).sort((a, b) => a - b);
+    // Plotly ignores mouse movement under 8 px on an axis, so a drag flatter
+    // (or narrower) than that has no extent there: zoom the other axis only.
+    const zoom = { selections: [] };
+    if (x1 > x0) zoom["xaxis.range"] = [x0, x1];
+    if (y1 > y0) zoom["yaxis.range"] = [y0, y1];
+    Plotly.update(gd, { selectedpoints: null }, zoom);
+  });
+}
 
 const state = {
   sourceRows: [],
@@ -561,6 +610,7 @@ function renderProfileChart() {
     },
     PLOTLY_CONFIG,
   );
+  enableZoomWindow(ui.profileChart);
 }
 
 function getPowerOfTenTickStep(minValue, maxValue) {
@@ -643,6 +693,7 @@ function renderPlanChart() {
     },
     PLOTLY_CONFIG,
   );
+  enableZoomWindow(ui.planChart);
 }
 
 
@@ -1382,6 +1433,7 @@ function renderDeflectedDeckChart() {
     },
     PLOTLY_CONFIG,
   );
+  enableZoomWindow(ui.deckChart);
 }
 
 // ---------------------------------------------------------------------------
@@ -1857,6 +1909,7 @@ function renderSectionChart() {
     },
     PLOTLY_CONFIG,
   );
+  enableZoomWindow(ui.sectionChart);
 
   const deflections = section.girders.map((item) => item.isopach).filter((value) => value !== null);
   const parts = [
