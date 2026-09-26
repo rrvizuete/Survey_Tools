@@ -87,6 +87,16 @@ const PLOTLY_LAYOUT = {
 };
 
 /**
+ * Plotly reports clicks through its own emitter (gd.on), not as DOM events,
+ * and Plotly.newPlot drops a chart's listeners, so charts re-bind their click
+ * handler after every render.
+ */
+function bindChartClick(gd, handler) {
+  gd.removeAllListeners?.("plotly_click");
+  gd.on("plotly_click", handler);
+}
+
+/**
  * Turns a finished select-drag into a zoom to exactly that box, then clears
  * the selection so no points stay dimmed. Plotly.newPlot drops a chart's
  * event listeners, so this runs after every render.
@@ -691,7 +701,7 @@ function renderPlanChart() {
           },
           marker: { size: isSelected ? 10 : 7 },
           name: `Span ${spanValue} — Girder ${girder}`,
-          customdata: [[spanValue, girder], [spanValue, girder]],
+          customdata: geo.planCenterline.map(() => [spanValue, girder]),
           hovertemplate: `Span ${spanValue}<br>Girder ${girder}<extra></extra>`,
         };
       });
@@ -731,6 +741,7 @@ function renderPlanChart() {
   );
   enableZoomWindow(ui.planChart);
   enableSquareGrid(ui.planChart);
+  bindChartClick(ui.planChart, onPlanChartClick);
 }
 
 
@@ -1452,6 +1463,7 @@ function renderDeflectedDeckChart() {
   );
   enableZoomWindow(ui.deckChart);
   enableSquareGrid(ui.deckChart);
+  bindChartClick(ui.deckChart, onDeckChartClick);
 }
 
 // ---------------------------------------------------------------------------
@@ -2432,7 +2444,7 @@ ui.graphGirderSelect.addEventListener("change", () => {
   renderPlanChart();
 });
 
-ui.planChart.addEventListener("plotly_click", (event) => {
+function onPlanChartClick(event) {
   if (event?.event?.button !== 0) return;
   const payload = event?.points?.[0]?.customdata;
   if (!payload) return;
@@ -2444,7 +2456,7 @@ ui.planChart.addEventListener("plotly_click", (event) => {
   ui.graphGirderSelect.value = girder;
   renderProfileChart();
   renderPlanChart();
-});
+}
 
 if (ui.deckSpanSelect) {
   ui.deckSpanSelect.addEventListener("change", () => {
@@ -2457,24 +2469,22 @@ if (ui.deckGirderSelect) {
   ui.deckGirderSelect.addEventListener("change", renderDeflectedDeckChart);
 }
 
-if (ui.deckChart) {
-  ui.deckChart.addEventListener("plotly_click", (event) => {
-    if (event?.event?.button !== 0) return;
-    const payload = event?.points?.[0]?.customdata;
-    // The alignment trace carries [station]; girders carry [span, girder].
-    if (Array.isArray(payload) && payload.length === 1 && Number.isFinite(payload[0])) {
-      showSectionAt(nearestListedStation(payload[0]));
-      return;
-    }
-    if (!payload || payload.length !== 2) return;
-    const [span, girder] = payload;
-    if (ui.deckSpanSelect.value !== span) {
-      ui.deckSpanSelect.value = span;
-      populateGirderSelect(span, ui.deckGirderSelect);
-    }
-    ui.deckGirderSelect.value = girder;
-    renderDeflectedDeckChart();
-  });
+function onDeckChartClick(event) {
+  if (event?.event?.button !== 0) return;
+  const payload = event?.points?.[0]?.customdata;
+  // The alignment trace carries [station]; girders carry [span, girder].
+  if (Array.isArray(payload) && payload.length === 1 && Number.isFinite(payload[0])) {
+    showSectionAt(nearestListedStation(payload[0]));
+    return;
+  }
+  if (!payload || payload.length !== 2) return;
+  const [span, girder] = payload;
+  if (ui.deckSpanSelect.value !== span) {
+    ui.deckSpanSelect.value = span;
+    populateGirderSelect(span, ui.deckGirderSelect);
+  }
+  ui.deckGirderSelect.value = girder;
+  renderDeflectedDeckChart();
 }
 
 const computeDeckBtn = document.getElementById("computeDeckBtn");
