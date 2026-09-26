@@ -161,6 +161,48 @@
           <h2 class="section-title mb-2">Deflected Deck Plan View (N/E)</h2>
           <p id="deckStatus" class="status-message mb-2"></p>
           <div id="deckChart" class="chart-frame"></div>
+
+          <h2 class="section-title mt-4 mb-2">Alignment Sections</h2>
+          <div class="row g-3 align-items-start mb-3">
+            <div class="col-12 col-lg-5">
+              <label for="alignmentFileInput" class="form-label">Civil Alignment (LandXML)</label>
+              <input class="form-control" id="alignmentFileInput" type="file" accept=".xml" />
+              <p id="alignmentUploadStatus" class="status-message mt-1 mb-0"></p>
+            </div>
+            <div class="col-12 col-md-8 col-lg-4">
+              <label for="alignmentSelect" class="form-label">Alignment</label>
+              <select id="alignmentSelect" class="form-select" disabled>
+                <option value="">(Upload an alignment)</option>
+              </select>
+            </div>
+            <div class="col-12 col-md-4 col-lg-3">
+              <label for="sectionIntervalInput" class="form-label">Section interval (ft)</label>
+              <input class="form-control" id="sectionIntervalInput" type="number" value="10" min="0.5" step="0.5" />
+            </div>
+          </div>
+
+          <div class="row g-3 align-items-end mb-3">
+            <div class="col-12 col-lg-6">
+              <label for="sectionStationSelect" class="form-label">Station</label>
+              <div class="input-group">
+                <button id="sectionPrevBtn" class="btn btn-outline-secondary" type="button" aria-label="Previous station">&larr;</button>
+                <select id="sectionStationSelect" class="form-select" disabled>
+                  <option value="">(Upload an alignment)</option>
+                </select>
+                <button id="sectionNextBtn" class="btn btn-outline-secondary" type="button" aria-label="Next station">&rarr;</button>
+              </div>
+            </div>
+            <div class="col-12 col-lg-6">
+              <label for="sectionStationInput" class="form-label">Go to station</label>
+              <div class="input-group">
+                <input class="form-control" id="sectionStationInput" type="text" placeholder="e.g. 12+34.50" />
+                <button id="sectionGoBtn" class="btn btn-outline-primary" type="button">Show Section</button>
+              </div>
+            </div>
+          </div>
+
+          <p id="sectionStatus" class="status-message mb-2"></p>
+          <div id="sectionChart" class="chart-frame chart-frame-section"></div>
         </section>
       </section>
 
@@ -188,5 +230,6 @@
     <script src="{{ url_for('bridge.static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
     <script src="{{ url_for('bridge.static', filename='landxml.js') }}"></script>
     <script src="{{ url_for('bridge.static', filename='isopach.js') }}"></script>
+    <script src="{{ url_for('bridge.static', filename='alignment.js') }}"></script>
     <script src="{{ url_for('bridge.static', filename='app.js') }}"></script>
 {% endblock %}

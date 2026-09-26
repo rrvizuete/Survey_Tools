@@ -170,6 +170,10 @@
   background: #fcfdff;
 }
 
+.chart-frame-section {
+  height: clamp(460px, 62vh, 900px);
+}
+
 .help-modal-content {
   border: none;
   border-radius: 0.8rem;
