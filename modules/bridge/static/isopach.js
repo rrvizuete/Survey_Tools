@@ -76,58 +76,68 @@
    * fascia deflection across the overhang (the deck keeps its cross slope)
    * instead of dropping to zero at the girder line.
    *
-   * With an overhang offset, the edge row sits that distance from the fascia
-   * girder, square to it. Without one, the fascia row is mirrored by the
-   * adjacent girder spacing.
+   * With `overhangDistance`, the edge row sits the distance it returns from
+   * the fascia girder, square to it. The callback receives the fascia row's
+   * points and outward unit normals and returns one distance per point, so
+   * the caller can measure from wherever the deck edge actually is. With a
+   * plain `overhangOffset`, every point uses that distance. With neither, the
+   * fascia row is mirrored by the adjacent girder spacing.
    */
-  function addOverhangRows(rows, overhangOffset) {
+  function addOverhangRows(rows, spanLabel, overhangOffset, overhangDistance) {
     if (rows.length < 2) return rows;
     const useOffset = Number.isFinite(overhangOffset) && overhangOffset > 0;
 
-    const push = (inner, neighbor, label) => ({
-      girder: label,
-      virtual: true,
-      points: inner.points.map((point, index) => {
-        const other = neighbor.points[index];
-        if (!other) return { e: point.e, n: point.n, value: point.value };
-
+    /** Unit normal to the girder at each point, pointing away from the neighbour. */
+    const outwardNormals = (inner, neighbor) =>
+      inner.points.map((point, index) => {
+        const other = neighbor.points[index] ?? neighbor.points[neighbor.points.length - 1];
         const awayE = point.e - other.e;
         const awayN = point.n - other.n;
-        if (!useOffset) {
-          return { e: point.e + awayE, n: point.n + awayN, value: point.value };
-        }
 
-        // Local girder tangent from the neighbouring intervals, then its
-        // normal flipped to point away from the adjacent girder.
+        // Local girder tangent from the neighbouring intervals.
         const before = inner.points[Math.max(0, index - 1)];
         const after = inner.points[Math.min(inner.points.length - 1, index + 1)];
         let tangentE = after.e - before.e;
         let tangentN = after.n - before.n;
         const tangentLength = Math.hypot(tangentE, tangentN);
-        let normalE;
-        let normalN;
         if (tangentLength > 1e-9) {
           tangentE /= tangentLength;
           tangentN /= tangentLength;
-          normalE = -tangentN;
-          normalN = tangentE;
-          if (normalE * awayE + normalN * awayN < 0) {
-            normalE = -normalE;
-            normalN = -normalN;
-          }
-        } else {
-          const awayLength = Math.hypot(awayE, awayN) || 1;
-          normalE = awayE / awayLength;
-          normalN = awayN / awayLength;
+          const flip = -tangentN * awayE + tangentE * awayN < 0 ? -1 : 1;
+          return { e: -tangentN * flip, n: tangentE * flip };
         }
+        const awayLength = Math.hypot(awayE, awayN) || 1;
+        return { e: awayE / awayLength, n: awayN / awayLength };
+      });
 
+    const push = (inner, neighbor, label) => {
+      if (!overhangDistance && !useOffset) {
         return {
-          e: point.e + normalE * overhangOffset,
-          n: point.n + normalN * overhangOffset,
-          value: point.value,
+          girder: label,
+          virtual: true,
+          points: inner.points.map((point, index) => {
+            const other = neighbor.points[index];
+            if (!other) return { e: point.e, n: point.n, value: point.value };
+            return { e: 2 * point.e - other.e, n: 2 * point.n - other.n, value: point.value };
+          }),
         };
-      }),
-    });
+      }
+
+      const normals = outwardNormals(inner, neighbor);
+      const distances = overhangDistance
+        ? overhangDistance({ span: spanLabel, girder: label, points: inner.points, normals })
+        : inner.points.map(() => overhangOffset);
+
+      return {
+        girder: label,
+        virtual: true,
+        points: inner.points.map((point, index) => ({
+          e: point.e + normals[index].e * distances[index],
+          n: point.n + normals[index].n * distances[index],
+          value: point.value,
+        })),
+      };
+    };
 
     const first = rows[0];
     const last = rows[rows.length - 1];
@@ -362,7 +372,12 @@
         return;
       }
 
-      const rows = addOverhangRows(buildRows(girders, warnings, spanLabel), overhangOffset);
+      const rows = addOverhangRows(
+        buildRows(girders, warnings, spanLabel),
+        spanLabel,
+        overhangOffset,
+        input.overhangDistance,
+      );
       [rows[0], rows[rows.length - 1]].forEach((row) => {
         overhangEdges.push({ span: spanLabel, girder: row.girder, points: row.points.map(({ e, n }) => ({ e, n })) });
       });
