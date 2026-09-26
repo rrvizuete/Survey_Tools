@@ -322,3 +322,26 @@
 .chart-status:empty {
   display: none;
 }
+
+/* View tools (zoom, pan, reset...) in a horizontal strip at the top left,
+   always shown, instead of Plotly's hover-only strip at the top right. */
+.chart-frame .modebar-container {
+  left: 6px !important;
+  right: auto !important;
+}
+
+/* One row: Plotly floats the groups, which wrap under each other when the
+   strip is given little width. */
+.chart-frame .modebar {
+  left: 0 !important;
+  right: auto !important;
+  display: flex !important;
+  flex-wrap: nowrap;
+  width: max-content;
+}
+
+.chart-frame .modebar-group {
+  display: flex !important;
+  float: none !important;
+  background: rgba(255, 255, 255, 0.85) !important;
+}

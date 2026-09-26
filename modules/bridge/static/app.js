@@ -48,12 +48,18 @@ const GRID_HEADER_DISPLAY = [
   { concept: "Centerline radius", meta: "(ft) [optional]" },
 ];
 
-// Shared across every Plotly chart so the modebar (zoom/pan/reset/download)
-// behaves identically everywhere.
-const PLOTLY_CONFIG = { responsive: true, displaylogo: false };
-// Plotly draws with its own default font unless told otherwise; use the
-// app-wide Inter. Annotation and trace text inherit it.
-const PLOTLY_FONT = { family: "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" };
+// Shared across every Plotly chart so the view tools (pan, zoom, reset,
+// download) look and behave identically everywhere, always shown.
+const PLOTLY_CONFIG = { responsive: true, displaylogo: false, displayModeBar: true };
+
+// Spread into every chart layout. Plotly draws with its own default font
+// unless told otherwise; use the app-wide Inter (annotation and trace text
+// inherit it). The view tools sit in a horizontal strip, placed top left by
+// styles.css.
+const PLOTLY_LAYOUT = {
+  font: { family: "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" },
+  modebar: { orientation: "h" },
+};
 
 const state = {
   sourceRows: [],
@@ -544,7 +550,7 @@ function renderProfileChart() {
       },
     ],
     {
-      font: PLOTLY_FONT,
+      ...PLOTLY_LAYOUT,
       title: `<b>Span ${span} — Girder ${girder}</b>`,
       xaxis: { title: "Length along girder (ft)", zeroline: false },
       yaxis: { title: "Deflection (in)" },
@@ -601,7 +607,7 @@ function renderPlanChart() {
     ui.planChart,
     traces,
     {
-      font: PLOTLY_FONT,
+      ...PLOTLY_LAYOUT,
       title: "<b>Plan View for All Spans (N/E)</b>",
       xaxis: {
         title: { text: "Easting (ft)", standoff: 34 },
@@ -1345,7 +1351,7 @@ function renderDeflectedDeckChart() {
     ui.deckChart,
     traces,
     {
-      font: PLOTLY_FONT,
+      ...PLOTLY_LAYOUT,
       uirevision: state.planRevision,
       title: "<b>Deflected Deck - Plan View (N/E)</b>",
       xaxis: {
@@ -1830,7 +1836,7 @@ function renderSectionChart() {
     ui.sectionChart,
     traces,
     {
-      font: PLOTLY_FONT,
+      ...PLOTLY_LAYOUT,
       title: { text: `<b>Section at Sta ${stationText}</b> - ${state.alignment.name}`, y: 0.97 },
       xaxis: {
         title: { text: "Offset from alignment (ft) - left negative, right positive" },
