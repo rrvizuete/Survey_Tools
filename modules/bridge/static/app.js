@@ -1200,18 +1200,23 @@ function bridgePlanPoints() {
 function bridgeStationRange(alignment) {
   let min = Infinity;
   let max = -Infinity;
+  let known = 0;
+  let alongside = 0;
   bridgePlanPoints().forEach((point) => {
+    known += 1;
     const hit = alignment.stationOffsetOf(point.e, point.n);
-    if (!hit) return;
+    // Points past the alignment's ends all pile up on the end station.
+    if (!hit || hit.beyondEnds) return;
+    alongside += 1;
     if (hit.station < min) min = hit.station;
     if (hit.station > max) max = hit.station;
   });
-  if (!(max >= min)) return { min: alignment.staStart, max: alignment.staEnd, fromBridge: false };
-  return {
-    min: Math.max(alignment.staStart, min),
-    max: Math.min(alignment.staEnd, max),
-    fromBridge: true,
-  };
+  // An alignment that only grazes the bridge (e.g. ends at it) gives a
+  // sliver of a range; treat it as not running alongside.
+  if (!(max - min > 1) || alongside < known * 0.25) {
+    return { min: alignment.staStart, max: alignment.staEnd, fromBridge: false, offBridge: known > 0 };
+  }
+  return { min, max, fromBridge: true };
 }
 
 /** Mean distance from the bridge to an alignment, used to pick a sensible default. */
@@ -1224,7 +1229,7 @@ function bridgeDistanceTo(alignment) {
   for (let i = 0; i < points.length; i += step) {
     const hit = alignment.stationOffsetOf(points[i].e, points[i].n);
     if (!hit) continue;
-    total += Math.abs(hit.offset);
+    total += hit.distance;
     count += 1;
   }
   return count ? total / count : Infinity;
@@ -1301,8 +1306,11 @@ function rebuildSectionStations() {
     );
   }
 
-  return range.fromBridge
-    ? `Bridge spans stations ${BridgeAlignment.formatStation(range.min)} to ${BridgeAlignment.formatStation(range.max)}.${note}`
+  if (range.fromBridge) {
+    return `Bridge spans stations ${BridgeAlignment.formatStation(range.min)} to ${BridgeAlignment.formatStation(range.max)}.${note}`;
+  }
+  return range.offBridge
+    ? `The bridge is not alongside this alignment, so the whole alignment is listed; choose another alignment.${note}`
     : `Run the calculation or load the DTM to limit stations to the bridge.${note}`;
 }
 

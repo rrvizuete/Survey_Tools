@@ -341,7 +341,16 @@
         if (Math.abs(along) < 1e-7) break;
       }
       const frame = pointAt(station);
-      return { station, offset: (e - frame.e) * frame.rightE + (n - frame.n) * frame.rightN };
+      // A point past either end projects onto the end station without being
+      // square to the alignment; flag it so callers can ignore it.
+      const along = (e - frame.e) * frame.dirE + (n - frame.n) * frame.dirN;
+      const offset = (e - frame.e) * frame.rightE + (n - frame.n) * frame.rightN;
+      return {
+        station,
+        offset,
+        distance: Math.hypot(along, offset),
+        beyondEnds: Math.abs(along) > 1e-3,
+      };
     }
 
     return {
@@ -358,7 +367,10 @@
   }
 
   function parseAlignments(text) {
-    const doc = new global.DOMParser().parseFromString(text, "application/xml");
+    // Civil 3D writes a UTF-8 byte-order mark, which some parsers reject
+    // ahead of the XML declaration.
+    const clean = String(text).replace(/^﻿/, "");
+    const doc = new global.DOMParser().parseFromString(clean, "application/xml");
     const parseError = doc.getElementsByTagName("parsererror");
     if (parseError && parseError.length) {
       throw new Error("The XML file could not be parsed. Confirm it is a valid LandXML export.");
