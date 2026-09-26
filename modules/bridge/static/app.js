@@ -20,15 +20,18 @@ const HELP_TEXT = `1. Data & Calculation Tab:
      adds it to each DTM point: Deflected Z = DTM Z + isopach.
    - Deck overhangs hold the deflection of the exterior girder they cantilever from, so
      the deck keeps its cross slope across the overhang.
-   - Overhang offset (ft) is the distance from the exterior girder centerline to the deck
-     edge, measured square to the girder. Leave it blank to use the adjacent girder spacing.
-     Deck points beyond the overhang edge, or past the span ends, have no isopach data and
-     keep their DTM elevation, so set the offset to reach at least the deck edge.
-   - The plan view shows the deck outline, all girders, and the overhang edges (dashed).
-     Pick a Span/Girder to highlight it and label the deflected elevations along it; every
-     point shows values on hover.
+   - Overhang offset (ft) is the distance from the exterior girder centerline to the line
+     where elevations are needed beyond the deck model (e.g. where the screed sits),
+     measured square to the girder. Past the DTM edge the deck is carried out at its own
+     cross slope (taken from the last 2 ft of the model), and the exterior girder's
+     deflection is added. Leave it blank for no extension.
+   - The plan view shows the deck outline, all girders, and the overhang edges (dashed
+     orange). Pick a Span/Girder to highlight it and label the deflected elevations along
+     it; every point, including the overhang edge points, shows values on hover.
    - Export Top of Deck Deflected points writes N, E, deflected elevation, description,
-     original elevation, and the isopach value applied.
+     deck elevation, and the isopach value applied at every girder interval. With an
+     overhang offset it also writes the overhang edge points (description ending in "OH",
+     e.g. A0100OH), noting whether their deck elevation was carried at the cross slope.
 
 4. Alignment Sections (Deflected Deck Tab):
    - Upload a civil alignment as LandXML (<Alignment> with lines, curves, and spirals).
@@ -765,6 +768,106 @@ function readOverhangOffset() {
   return value > 0 ? value : null;
 }
 
+// How much of the deck, inward from the DTM edge, sets the cross slope that
+// is carried out to the overhang (screed) line.
+const CROSS_SLOPE_RUN = 2;
+
+/**
+ * Deck elevations out to the overhang (screed) line. Inside the DTM this is
+ * the TIN elevation. In the band between an exterior girder and its overhang
+ * edge, but past the DTM, the last CROSS_SLOPE_RUN ft of deck is extended
+ * square to the girder at its own cross slope, so a surveyor gets prorated
+ * elevations where the screed sits beyond the model.
+ */
+function buildDeckSurface(tin, mesh, overhangOffset) {
+  const bands = [];
+  if (overhangOffset !== null && mesh) {
+    mesh.overhangEdges.forEach((edge) => {
+      const centerline = state.girderGeometry[`${edge.span}||${edge.girder}`]?.planCenterline;
+      if (centerline?.length >= 2) bands.push({ ...edge, centerline });
+    });
+  }
+
+  /** Foot on the fascia girder and outward distance, if the point is in an overhang band. */
+  function locate(e, n) {
+    let best = null;
+    bands.forEach((band) => {
+      const { centerline, points: edgePoints } = band;
+      for (let i = 0; i + 1 < centerline.length; i += 1) {
+        const a = centerline[i];
+        const b = centerline[i + 1];
+        const dE = b.e - a.e;
+        const dN = b.n - a.n;
+        const lengthSq = dE * dE + dN * dN;
+        if (lengthSq < 1e-12) continue;
+        const u = ((e - a.e) * dE + (n - a.n) * dN) / lengthSq;
+        if (u < -1e-9 || u > 1 + 1e-9) continue;
+
+        const foot = { e: a.e + u * dE, n: a.n + u * dN };
+        // Outward direction, interpolated from the overhang edge rows.
+        let outE = (1 - u) * (edgePoints[i].e - a.e) + u * (edgePoints[i + 1].e - b.e);
+        let outN = (1 - u) * (edgePoints[i].n - a.n) + u * (edgePoints[i + 1].n - b.n);
+        const outLength = Math.hypot(outE, outN);
+        if (outLength < 1e-9) continue;
+        outE /= outLength;
+        outN /= outLength;
+
+        const along = (e - foot.e) * outE + (n - foot.n) * outN;
+        if (along <= 0 || along > overhangOffset + 1e-6) continue;
+        if (!best || along < best.along) best = { foot, outE, outN, along, band };
+      }
+    });
+    return best;
+  }
+
+  function extendedZ(hit) {
+    const at = (s) => tin.sample(hit.foot.e + hit.outE * s, hit.foot.n + hit.outN * s);
+    if (at(0) === null) return null;
+
+    // Bisect for the DTM edge between the girder (inside) and the point (outside).
+    let inside = 0;
+    let outside = hit.along;
+    for (let i = 0; i < 40 && outside - inside > 1e-6; i += 1) {
+      const middle = (inside + outside) / 2;
+      if (at(middle) === null) outside = middle;
+      else inside = middle;
+    }
+
+    const edgeZ = at(inside);
+    const back = Math.max(0, inside - CROSS_SLOPE_RUN);
+    const backZ = at(back);
+    const slope = backZ !== null && inside - back > 0.05 ? (edgeZ - backZ) / (inside - back) : 0;
+    return { z: edgeZ + slope * (hit.along - inside), crossSlope: slope, dtmEdge: inside };
+  }
+
+  return {
+    extends: bands.length > 0,
+    /** True where the deck exists only because of the overhang extension. */
+    inOverhangBand(e, n) {
+      return bands.length > 0 && locate(e, n) !== null;
+    },
+    /** {z, extended, crossSlope} or null where there is no deck. */
+    sample(e, n) {
+      const z = tin ? tin.sample(e, n) : null;
+      if (z !== null) return { z, extended: false, crossSlope: null };
+      if (!bands.length || !tin) return null;
+      const hit = locate(e, n);
+      if (!hit) return null;
+      const result = extendedZ(hit);
+      if (!result) return null;
+      // A point sitting right on the screed line is on the mesh boundary,
+      // where sampling can miss by rounding; nudge inward to read it.
+      const inward = Math.max(0, hit.along - 1e-4);
+      return {
+        z: result.z,
+        extended: true,
+        crossSlope: result.crossSlope,
+        meshPoint: { e: hit.foot.e + hit.outE * inward, n: hit.foot.n + hit.outN * inward },
+      };
+    },
+  };
+}
+
 function getDeckOutlineRings() {
   const surface = state.dtm;
   if (!surface) return [];
@@ -836,7 +939,7 @@ function computeDeflectedDeck() {
   mesh.warnings.forEach((warning) => logLine(`Isopach WARNING: ${warning}`));
   logLine(
     overhangOffset === null
-      ? "Isopach: overhang edge set one girder spacing outside the exterior girders (no overhang offset given)."
+      ? "Isopach: no overhang offset given; the deck is not extended past the DTM."
       : `Isopach: overhang edge set ${overhangOffset.toFixed(3)} ft outside the exterior girder centerlines.`,
   );
 
@@ -918,9 +1021,53 @@ function computeDeflectedDeck() {
     });
   });
 
+  // Screed points: the overhang edge at every girder interval, with the deck
+  // carried out at its cross slope and the fascia girder's deflection added.
+  const deckSurface = buildDeckSurface(tin, mesh, overhangOffset);
+  const edgePoints = [];
+  let extendedEdgePoints = 0;
+  if (deckSurface.extends) {
+    mesh.overhangEdges.forEach((edge) => {
+      const profile = state.profiles[`${edge.span}||${edge.girder}`] ?? [];
+      edge.points.forEach((point, interval) => {
+        const deck = deckSurface.sample(point.e, point.n);
+        if (!deck || !profile[interval]) return;
+        // The overhang row carries the fascia value by construction; read it
+        // from the profile rather than sampling right on the mesh boundary.
+        const isopach = profile[interval].deflectionIn / 12;
+        if (deck.extended) extendedEdgePoints += 1;
+        edgePoints.push({
+          span: edge.span,
+          girder: edge.girder,
+          interval,
+          e: point.e,
+          n: point.n,
+          originalZ: deck.z,
+          extended: deck.extended,
+          crossSlope: deck.crossSlope,
+          isopach,
+          deflectedZ: deck.z + isopach,
+        });
+      });
+    });
+  }
+
   state.isopachMesh = mesh;
-  state.deflectedDeck = { points, inside, girderPoints };
+  state.deflectedDeck = { points, inside, girderPoints, overhangOffset, deckSurface, edgePoints };
   state.planRevision += 1;
+
+  if (deckSurface.extends) {
+    const expected = mesh.overhangEdges.reduce((total, edge) => total + edge.points.length, 0);
+    logLine(
+      `Overhang: ${edgePoints.length} of ${expected} screed points sampled, ${extendedEdgePoints} of them past the ` +
+        `DTM edge (deck carried out at its cross slope over the last ${CROSS_SLOPE_RUN} ft of the model).`,
+    );
+    if (edgePoints.length < expected) {
+      logLine(
+        "Overhang WARNING: some screed points have no deck elevation; the DTM does not reach the exterior girder there.",
+      );
+    }
+  }
 
   logLine(
     `Deflected deck: ${points.length} DTM points - ${inside} inside the isopach surface, ` +
@@ -950,19 +1097,22 @@ function computeDeflectedDeck() {
 function buildIsopachHeatmap(rings) {
   const mesh = state.isopachMesh;
   if (!mesh || !rings.length) return null;
+  const surface = state.deflectedDeck?.deckSurface;
+  const extendsDeck = Boolean(surface?.extends);
 
   let minE = Infinity;
   let maxE = -Infinity;
   let minN = Infinity;
   let maxN = -Infinity;
-  rings.forEach((ring) =>
-    ring.forEach((point) => {
-      if (point.e < minE) minE = point.e;
-      if (point.e > maxE) maxE = point.e;
-      if (point.n < minN) minN = point.n;
-      if (point.n > maxN) maxN = point.n;
-    }),
-  );
+  const include = (point) => {
+    if (point.e < minE) minE = point.e;
+    if (point.e > maxE) maxE = point.e;
+    if (point.n < minN) minN = point.n;
+    if (point.n > maxN) maxN = point.n;
+  };
+  rings.forEach((ring) => ring.forEach(include));
+  // With an overhang offset the deck reaches the screed line, past the DTM.
+  if (extendsDeck) mesh.overhangEdges.forEach((edge) => edge.points.forEach(include));
 
   const width = maxE - minE;
   const height = maxN - minN;
@@ -977,7 +1127,7 @@ function buildIsopachHeatmap(rings) {
   const ys = Array.from({ length: rows }, (_, j) => minN + j * step);
   const z = ys.map((n) =>
     xs.map((e) => {
-      if (!BridgeIsopach.pointInRings(e, n, rings)) return null;
+      if (!BridgeIsopach.pointInRings(e, n, rings) && !(extendsDeck && surface.inOverhangBand(e, n))) return null;
       const hit = mesh.sample(e, n);
       return hit ? hit.value : 0;
     }),
@@ -1048,14 +1198,30 @@ function renderDeflectedDeckChart() {
     });
   });
 
-  (state.deflectedDeck ? state.isopachMesh?.overhangEdges ?? [] : []).forEach((edge) => {
+  // Overhang (screed) lines only exist when the user gave an offset; the
+  // blank-offset mesh edge is an internal detail, not a deck edge.
+  const screedEdges = state.deflectedDeck?.deckSurface?.extends ? state.isopachMesh.overhangEdges : [];
+  const screedPoints = state.deflectedDeck?.edgePoints ?? [];
+  screedEdges.forEach((edge) => {
+    const points = screedPoints.filter((point) => point.span === edge.span && point.girder === edge.girder);
     traces.push({
-      x: edge.points.map((point) => point.e),
-      y: edge.points.map((point) => point.n),
-      mode: "lines",
+      x: points.map((point) => point.e),
+      y: points.map((point) => point.n),
+      mode: "lines+markers",
       line: { width: 2, color: "#fd7e14", dash: "dash" },
+      marker: { size: 6, color: "#fd7e14" },
       name: `Span ${edge.span} - overhang edge at Girder ${edge.girder}`,
-      hovertemplate: `Span ${edge.span}<br>Overhang edge (Girder ${edge.girder})<extra></extra>`,
+      customdata: points.map((point) => [
+        `${formatSpan(point.span)}${formatGirder(point.girder)}${formatInterval(point.interval)}OH`,
+        point.originalZ,
+        point.isopach,
+        point.deflectedZ,
+        point.extended ? "carried at cross slope" : "from DTM",
+      ]),
+      hovertemplate:
+        "<b>%{customdata[0]}</b> (overhang edge)<br>N %{y:.3f}<br>E %{x:.3f}<br>" +
+        "Deck %{customdata[1]:.3f} ft (%{customdata[4]})<br>Deflection %{customdata[2]:.3f} ft<br>" +
+        "<b>Deflected %{customdata[3]:.3f} ft</b><extra></extra>",
     });
   });
 
@@ -1117,7 +1283,10 @@ function renderDeflectedDeckChart() {
     if (deck) {
       ui.deckStatus.textContent =
         `${deck.points.length} deflected deck points (${deck.inside} inside the isopach surface, ` +
-        `${deck.points.length - deck.inside} keeping their original elevation).`;
+        `${deck.points.length - deck.inside} keeping their original elevation).` +
+        (deck.edgePoints?.length
+          ? ` ${deck.edgePoints.length} overhang edge points ${deck.overhangOffset} ft outside the exterior girders.`
+          : "");
     } else if (state.dtm) {
       ui.deckStatus.textContent =
         `"${state.dtm.name}" loaded with ${state.dtm.points.length} points. ` +
@@ -1367,6 +1536,8 @@ function buildSection(station) {
 
   const mesh = state.deflectedDeck ? state.isopachMesh : null;
   const tin = state.dtmTin;
+  const surface = state.deflectedDeck?.deckSurface ?? null;
+  const extendsDeck = Boolean(surface?.extends);
 
   const girders = [];
   sortedSpans().forEach((span) => {
@@ -1378,7 +1549,7 @@ function buildSection(station) {
   });
 
   const overhangs = [];
-  (mesh?.overhangEdges ?? []).forEach((edge) => {
+  (extendsDeck ? mesh.overhangEdges : []).forEach((edge) => {
     sectionCrossings(origin, right, edge.points).forEach((offset) =>
       overhangs.push({ span: edge.span, girder: edge.girder, offset }),
     );
@@ -1402,11 +1573,24 @@ function buildSection(station) {
 
   const sampleSurfaces = (offset) => {
     const point = at(offset);
-    const originalZ = tin ? tin.sample(point.e, point.n) : null;
-    if (originalZ === null) return { offset, originalZ: null, isopach: null, deflectedZ: null };
-    const hit = mesh ? mesh.sample(point.e, point.n) : null;
+    let deck = null;
+    if (surface) deck = surface.sample(point.e, point.n);
+    else if (tin) {
+      const z = tin.sample(point.e, point.n);
+      deck = z === null ? null : { z, extended: false };
+    }
+    if (!deck) return { offset, originalZ: null, isopach: null, deflectedZ: null, extended: false };
+
+    const meshPoint = deck.meshPoint ?? point;
+    const hit = mesh ? mesh.sample(meshPoint.e, meshPoint.n) : null;
     const isopach = mesh ? (hit ? hit.value : 0) : null;
-    return { offset, originalZ, isopach, deflectedZ: mesh ? originalZ + isopach : null };
+    return {
+      offset,
+      originalZ: deck.z,
+      isopach,
+      deflectedZ: mesh ? deck.z + isopach : null,
+      extended: deck.extended,
+    };
   };
 
   // Regular samples plus the exact feature offsets, so girder and edge
@@ -1465,27 +1649,63 @@ function renderSectionChart() {
   state.section = section;
 
   const x = section.profile.map((point) => point.offset);
+  const profile = section.profile;
+  // Split each surface into the part read from the DTM (solid) and the part
+  // carried out at the cross slope to the screed line (dashed). The dashed
+  // part repeats its neighbouring DTM sample so the two lines join.
+  const touchesExtended = (i) => profile[i - 1]?.extended || profile[i + 1]?.extended;
+  const modelPart = (value) => profile.map((point) => (point.extended ? null : value(point)));
+  const extendedPart = (value) =>
+    profile.map((point, i) => (point.extended || (value(point) !== null && touchesExtended(i)) ? value(point) : null));
+  const hasExtended = profile.some((point) => point.extended);
+  const deflectionIn = profile.map((point) => (point.isopach === null ? null : point.isopach * 12));
+
   const traces = [
     {
       x,
-      y: section.profile.map((point) => point.originalZ),
+      y: modelPart((point) => point.originalZ),
       mode: "lines",
       line: { width: 2.5, color: "#1b5ba3" },
       name: "Original DTM",
+      legendgroup: "original",
       hovertemplate: "%{y:.3f} ft<extra>Original</extra>",
     },
   ];
+  if (hasExtended) {
+    traces.push({
+      x,
+      y: extendedPart((point) => point.originalZ),
+      mode: "lines",
+      line: { width: 2.5, color: "#1b5ba3", dash: "dash" },
+      name: "Original, carried at cross slope",
+      legendgroup: "original",
+      hovertemplate: "%{y:.3f} ft<extra>Original (extended)</extra>",
+    });
+  }
 
   if (section.hasDeflected) {
     traces.push({
       x,
-      y: section.profile.map((point) => point.deflectedZ),
-      customdata: section.profile.map((point) => (point.isopach === null ? null : point.isopach * 12)),
+      y: modelPart((point) => point.deflectedZ),
+      customdata: deflectionIn,
       mode: "lines",
       line: { width: 2.5, color: "#dc3545" },
       name: "Deflected",
+      legendgroup: "deflected",
       hovertemplate: "%{y:.3f} ft (deflection %{customdata:.3f} in)<extra>Deflected</extra>",
     });
+    if (hasExtended) {
+      traces.push({
+        x,
+        y: extendedPart((point) => point.deflectedZ),
+        customdata: deflectionIn,
+        mode: "lines",
+        line: { width: 2.5, color: "#dc3545", dash: "dash" },
+        name: "Deflected, carried at cross slope",
+        legendgroup: "deflected",
+        hovertemplate: "%{y:.3f} ft (deflection %{customdata:.3f} in)<extra>Deflected (extended)</extra>",
+      });
+    }
   }
 
   const spansCrossed = new Set(section.girders.map((item) => item.span));
@@ -1529,11 +1749,12 @@ function renderSectionChart() {
         item.girder,
         item.originalZ,
         item.isopach === null ? 0 : item.isopach * 12,
+        item.extended ? "carried at cross slope" : "from DTM",
       ]),
       hovertemplate:
         "<b>Overhang edge (Span %{customdata[0]}, Girder %{customdata[1]})</b><br>Offset %{x:.3f} ft<br>" +
-        "DTM %{customdata[2]:.3f} ft<br>Deflection %{customdata[3]:.3f} in<br><b>Deflected %{y:.3f} ft</b>" +
-        "<extra></extra>",
+        "Deck %{customdata[2]:.3f} ft (%{customdata[4]})<br>Deflection %{customdata[3]:.3f} in<br>" +
+        "<b>Deflected %{y:.3f} ft</b><extra></extra>",
     });
   }
 
@@ -1816,10 +2037,12 @@ function exportTopOfDeckDeflected() {
 
   if (state.deflectedDeck) {
     const girderPoints = state.deflectedDeck.girderPoints ?? {};
+    const edgePoints = state.deflectedDeck.edgePoints ?? [];
     const rows = [
-      ["N", "E", "Deflected Elevation (ft)", "Description", "Deck Elevation (ft)", "Isopach (ft)"],
+      ["N", "E", "Deflected Elevation (ft)", "Description", "Deck Elevation (ft)", "Isopach (ft)", "Note"],
     ];
 
+    let screedRows = 0;
     sortedSpans().forEach((span) => {
       sortedGirders(span).forEach((girder) => {
         (girderPoints[`${span}||${girder}`] ?? []).forEach((point) => {
@@ -1830,9 +2053,28 @@ function exportTopOfDeckDeflected() {
             `${formatSpan(span)}${formatGirder(girder)}${formatInterval(point.interval)}`,
             point.originalZ,
             point.isopach,
+            "",
           ]);
         });
       });
+
+      // Screed points along the overhang edges, after the span's girders.
+      edgePoints
+        .filter((point) => point.span === span)
+        .forEach((point) => {
+          screedRows += 1;
+          rows.push([
+            point.n,
+            point.e,
+            point.deflectedZ,
+            `${formatSpan(span)}${formatGirder(point.girder)}${formatInterval(point.interval)}OH`,
+            point.originalZ,
+            point.isopach,
+            point.extended
+              ? `Overhang edge; deck carried at ${(point.crossSlope * 100).toFixed(2)}% cross slope past the DTM`
+              : "Overhang edge; deck from DTM",
+          ]);
+        });
     });
 
     if (rows.length === 1) {
@@ -1844,7 +2086,11 @@ function exportTopOfDeckDeflected() {
     }
 
     exportRowsAsWorkbook(rows, "ToD Deflected.xlsx");
-    logLine(`Export: wrote ${rows.length - 1} deflected deck points at girder intervals to "ToD Deflected.xlsx".`);
+    logLine(
+      `Export: wrote ${rows.length - 1 - screedRows} deflected deck points at girder intervals` +
+        (screedRows ? ` and ${screedRows} overhang (screed) points` : "") +
+        ' to "ToD Deflected.xlsx".',
+    );
     return;
   }
 
