@@ -166,6 +166,7 @@ const ui = {
   sectionStationInput: document.getElementById("sectionStationInput"),
   sectionStatus: document.getElementById("sectionStatus"),
   sectionChart: document.getElementById("sectionChart"),
+  verticalExaggerationInput: document.getElementById("verticalExaggerationInput"),
 };
 
 function setProgress(percent, text) {
@@ -1697,6 +1698,31 @@ function buildSection(station) {
   return { station, origin, right, minOffset, maxOffset, profile, girders, overhangs, hasDeflected: Boolean(mesh) };
 }
 
+/** Vertical exaggeration typed by the user, or null to fit the section to the view. */
+function readVerticalExaggeration() {
+  const value = Number(ui.verticalExaggerationInput?.value);
+  return String(ui.verticalExaggerationInput?.value ?? "").trim() && Number.isFinite(value) && value > 0
+    ? value
+    : null;
+}
+
+/**
+ * Shows the exaggeration the section is drawn at: vertical scale over
+ * horizontal scale (screen pixels per ft of elevation / per ft of offset).
+ * With the box blank this is the fitted value, so the user sees what
+ * "Auto" currently means and can type it in to hold it between stations.
+ */
+function showSectionExaggeration() {
+  const input = ui.verticalExaggerationInput;
+  const layout = ui.sectionChart?._fullLayout;
+  if (!input || !layout?.xaxis?._length || !layout?.yaxis?._length) return;
+  const xSpan = Math.abs(layout.xaxis.range[1] - layout.xaxis.range[0]);
+  const ySpan = Math.abs(layout.yaxis.range[1] - layout.yaxis.range[0]);
+  if (!(xSpan > 0) || !(ySpan > 0)) return;
+  const current = layout.yaxis._length / ySpan / (layout.xaxis._length / xSpan);
+  input.placeholder = `Auto (${current >= 10 ? current.toFixed(0) : current.toFixed(1)})`;
+}
+
 function renderSectionChart() {
   if (!ui.sectionChart) return;
 
@@ -1728,6 +1754,7 @@ function renderSectionChart() {
   }
 
   const section = buildSection(station);
+  const exaggeration = readVerticalExaggeration();
   const stationText = BridgeAlignment.formatStation(station);
   if (section.empty) {
     Plotly.purge(ui.sectionChart);
@@ -1895,7 +1922,14 @@ function renderSectionChart() {
         range: [section.minOffset, section.maxOffset],
         zeroline: false,
       },
-      yaxis: { title: { text: "Elevation (ft)" }, tickformat: ".2f", automargin: true },
+      yaxis: {
+        title: { text: "Elevation (ft)" },
+        tickformat: ".2f",
+        automargin: true,
+        // A set exaggeration locks 1 ft of elevation to `exaggeration` ft of
+        // offset on screen; blank lets the section fill the view.
+        ...(exaggeration ? { scaleanchor: "x", scaleratio: exaggeration } : {}),
+      },
       hovermode: "closest",
       shapes,
       annotations,
@@ -1910,6 +1944,9 @@ function renderSectionChart() {
     PLOTLY_CONFIG,
   );
   enableZoomWindow(ui.sectionChart);
+  showSectionExaggeration();
+  ui.sectionChart.on("plotly_relayout", showSectionExaggeration);
+  ui.sectionChart.on("plotly_update", showSectionExaggeration); // zoom window
 
   const deflections = section.girders.map((item) => item.isopach).filter((value) => value !== null);
   const parts = [
@@ -2336,6 +2373,7 @@ if (ui.alignmentFileInput) {
     refreshSections();
     renderDeflectedDeckChart();
   });
+  ui.verticalExaggerationInput.addEventListener("change", renderSectionChart);
   ui.sectionStationSelect.addEventListener("change", () => showSectionAt(Number(ui.sectionStationSelect.value)));
   document.getElementById("sectionPrevBtn").addEventListener("click", () => stepSection(-1));
   document.getElementById("sectionNextBtn").addEventListener("click", () => stepSection(1));
