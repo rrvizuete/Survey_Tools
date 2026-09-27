@@ -48,12 +48,77 @@ const GRID_HEADER_DISPLAY = [
   { concept: "Centerline radius", meta: "(ft) [optional]" },
 ];
 
-// Shared across every Plotly chart so the modebar (zoom/pan/reset/download)
-// behaves identically everywhere.
-const PLOTLY_CONFIG = { responsive: true, displaylogo: false };
-// Plotly draws with its own default font unless told otherwise; use the
-// app-wide Inter. Annotation and trace text inherit it.
-const PLOTLY_FONT = { family: "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" };
+// Zoom window: drag a box corner to corner and the view zooms to exactly that
+// box. Plotly's own zoom snaps a thin box to one axis and reshapes the box on
+// equal-aspect charts (the plan views), so the window is drawn with a
+// select-drag instead and applied in enableZoomWindow.
+const ZOOM_WINDOW_BUTTON = {
+  name: "zoomWindow",
+  title: "Zoom window (drag a diagonal)",
+  icon: Plotly.Icons.zoombox,
+  attr: "dragmode",
+  val: "select",
+  click: (gd) => Plotly.relayout(gd, { dragmode: "select" }),
+};
+
+// Shared across every Plotly chart so the view tools (zoom window, pan,
+// zoom in/out, reset, download) look and behave identically everywhere.
+const PLOTLY_CONFIG = {
+  responsive: true,
+  displaylogo: false,
+  displayModeBar: true,
+  modeBarButtonsToRemove: ["zoom2d", "select2d", "lasso2d", "autoScale2d"],
+  modeBarButtonsToAdd: [ZOOM_WINDOW_BUTTON],
+};
+
+// Spread into every chart layout. Plotly draws with its own default font
+// unless told otherwise; use the app-wide Inter (annotation and trace text
+// inherit it). The view tools sit in a horizontal strip (placed top left by
+// styles.css) and the zoom window is the default drag.
+const PLOTLY_LAYOUT = {
+  font: { family: "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" },
+  modebar: { orientation: "h" },
+  dragmode: "select",
+  // "d": the box is always the rectangle on the drag's diagonal. ("any" turns
+  // a thin drag into a full-width or full-height band.)
+  selectdirection: "d",
+  newselection: { line: { color: "#0d6efd", width: 1.5, dash: "dash" } },
+  activeselection: { fillcolor: "#0d6efd", opacity: 0.08 },
+};
+
+/**
+ * Plotly reports clicks through its own emitter (gd.on), not as DOM events,
+ * and Plotly.newPlot drops a chart's listeners, so charts re-bind their click
+ * handler after every render.
+ */
+function bindChartClick(gd, handler) {
+  gd.removeAllListeners?.("plotly_click");
+  gd.on("plotly_click", handler);
+}
+
+/**
+ * Turns a finished select-drag into a zoom to exactly that box, then clears
+ * the selection so no points stay dimmed. Plotly.newPlot drops a chart's
+ * event listeners, so this runs after every render.
+ */
+function enableZoomWindow(gd) {
+  // Read the drawn box from the layout's selections rather than the
+  // plotly_selected event: that event carries no range when the box holds no
+  // data points, which is common when zooming into empty space.
+  gd.removeAllListeners?.("plotly_relayout");
+  gd.on("plotly_relayout", (update) => {
+    const box = update?.selections?.[0];
+    if (!box || box.type !== "rect") return;
+    const [x0, x1] = [box.x0, box.x1].map(Number).sort((a, b) => a - b);
+    const [y0, y1] = [box.y0, box.y1].map(Number).sort((a, b) => a - b);
+    // Plotly ignores mouse movement under 8 px on an axis, so a drag flatter
+    // (or narrower) than that has no extent there: zoom the other axis only.
+    const zoom = { selections: [] };
+    if (x1 > x0) zoom["xaxis.range"] = [x0, x1];
+    if (y1 > y0) zoom["yaxis.range"] = [y0, y1];
+    Plotly.update(gd, { selectedpoints: null }, zoom);
+  });
+}
 
 const state = {
   sourceRows: [],
@@ -111,6 +176,7 @@ const ui = {
   sectionStationInput: document.getElementById("sectionStationInput"),
   sectionStatus: document.getElementById("sectionStatus"),
   sectionChart: document.getElementById("sectionChart"),
+  verticalExaggerationInput: document.getElementById("verticalExaggerationInput"),
 };
 
 function setProgress(percent, text) {
@@ -544,7 +610,7 @@ function renderProfileChart() {
       },
     ],
     {
-      font: PLOTLY_FONT,
+      ...PLOTLY_LAYOUT,
       title: `<b>Span ${span} — Girder ${girder}</b>`,
       xaxis: { title: "Length along girder (ft)", zeroline: false },
       yaxis: { title: "Deflection (in)" },
@@ -555,14 +621,60 @@ function renderProfileChart() {
     },
     PLOTLY_CONFIG,
   );
+  enableZoomWindow(ui.profileChart);
 }
 
-function getPowerOfTenTickStep(minValue, maxValue) {
-  const range = Math.max(0, Math.abs(maxValue - minValue));
-  if (range <= 0) return 1;
-  const approx = range / 8;
-  const exponent = Math.round(Math.log10(Math.max(1, approx)));
-  return 10 ** exponent;
+// Target size (px) of a plan-view grid cell on screen.
+const PLAN_GRID_PX = 80;
+
+/** The 1, 2 or 5 x 10^n step nearest above `target`. */
+function niceStep(target) {
+  if (!(target > 0)) return 1;
+  const power = 10 ** Math.floor(Math.log10(target));
+  const scaled = target / power;
+  return (scaled <= 1 ? 1 : scaled <= 2 ? 2 : scaled <= 5 ? 5 : 10) * power;
+}
+
+/**
+ * Plan views keep true proportions (1 ft north = 1 ft east on screen), so the
+ * same grid step on both axes gives square cells. The step is picked from the
+ * visible area -- about PLAN_GRID_PX per cell -- so the grid stays square and
+ * readable at any zoom.
+ */
+function fitSquareGrid(gd) {
+  const xa = gd._fullLayout?.xaxis;
+  const ya = gd._fullLayout?.yaxis;
+  if (!xa?._length || !ya?._length) return;
+  const ftPerPx = Math.max(
+    Math.abs(xa.range[1] - xa.range[0]) / xa._length,
+    Math.abs(ya.range[1] - ya.range[0]) / ya._length,
+  );
+  const step = niceStep(ftPerPx * PLAN_GRID_PX);
+  if (xa.dtick === step && ya.dtick === step) return;
+  const decimals = step >= 1 ? 0 : Math.ceil(-Math.log10(step) - 1e-9);
+  const format = `.${decimals}f`;
+  Plotly.relayout(gd, {
+    "xaxis.dtick": step,
+    "yaxis.dtick": step,
+    "xaxis.tick0": 0,
+    "yaxis.tick0": 0,
+    "xaxis.tickformat": format,
+    "yaxis.tickformat": format,
+  });
+}
+
+/** Keeps a plan view's grid square after every render, zoom, pan, or resize. */
+function enableSquareGrid(gd) {
+  fitSquareGrid(gd);
+  const refit = (update) => {
+    if (update && "xaxis.dtick" in update) return; // our own relayout
+    fitSquareGrid(gd);
+  };
+  // The zoom window applies its box with Plotly.update, which reports
+  // plotly_update rather than plotly_relayout.
+  gd.on("plotly_relayout", refit);
+  gd.removeAllListeners?.("plotly_update");
+  gd.on("plotly_update", () => fitSquareGrid(gd));
 }
 
 function renderPlanChart() {
@@ -589,7 +701,7 @@ function renderPlanChart() {
           },
           marker: { size: isSelected ? 10 : 7 },
           name: `Span ${spanValue} — Girder ${girder}`,
-          customdata: [[spanValue, girder], [spanValue, girder]],
+          customdata: geo.planCenterline.map(() => [spanValue, girder]),
           hovertemplate: `Span ${spanValue}<br>Girder ${girder}<extra></extra>`,
         };
       });
@@ -601,33 +713,23 @@ function renderPlanChart() {
     ui.planChart,
     traces,
     {
-      font: PLOTLY_FONT,
+      ...PLOTLY_LAYOUT,
       title: "<b>Plan View for All Spans (N/E)</b>",
       xaxis: {
         title: { text: "Easting (ft)", standoff: 34 },
-        dtick: getPowerOfTenTickStep(
-          Math.min(...traces.flatMap((t) => t.x)),
-          Math.max(...traces.flatMap((t) => t.x)),
-        ),
         tickformat: ".0f",
         exponentformat: "none",
         showexponent: "none",
         tickangle: -45,
-        nticks: 10,
         automargin: true,
       },
       yaxis: {
         title: { text: "Northing (ft)", standoff: 14 },
         scaleanchor: "x",
         scaleratio: 1,
-        dtick: getPowerOfTenTickStep(
-          Math.min(...traces.flatMap((t) => t.y)),
-          Math.max(...traces.flatMap((t) => t.y)),
-        ),
         tickformat: ".0f",
         exponentformat: "none",
         showexponent: "none",
-        nticks: 10,
         automargin: true,
       },
       margin: { t: 60, r: 25, b: 115, l: 95 },
@@ -637,6 +739,9 @@ function renderPlanChart() {
     },
     PLOTLY_CONFIG,
   );
+  enableZoomWindow(ui.planChart);
+  enableSquareGrid(ui.planChart);
+  bindChartClick(ui.planChart, onPlanChartClick);
 }
 
 
@@ -1325,48 +1430,28 @@ function renderDeflectedDeckChart() {
     }
   }
 
-  // Spreading into Math.min/max would overflow the argument limit on a large deck.
-  const boundsOfTraces = (axis) => {
-    let min = Infinity;
-    let max = -Infinity;
-    traces.forEach((trace) => {
-      const values = trace[axis];
-      for (let i = 0; i < values.length; i += 1) {
-        if (values[i] < min) min = values[i];
-        if (values[i] > max) max = values[i];
-      }
-    });
-    return { min, max };
-  };
-  const xBounds = boundsOfTraces("x");
-  const yBounds = boundsOfTraces("y");
-
   Plotly.react(
     ui.deckChart,
     traces,
     {
-      font: PLOTLY_FONT,
+      ...PLOTLY_LAYOUT,
       uirevision: state.planRevision,
       title: "<b>Deflected Deck - Plan View (N/E)</b>",
       xaxis: {
         title: { text: "Easting (ft)", standoff: 34 },
-        dtick: getPowerOfTenTickStep(xBounds.min, xBounds.max),
         tickformat: ".0f",
         exponentformat: "none",
         showexponent: "none",
         tickangle: -45,
-        nticks: 10,
         automargin: true,
       },
       yaxis: {
         title: { text: "Northing (ft)", standoff: 14 },
         scaleanchor: "x",
         scaleratio: 1,
-        dtick: getPowerOfTenTickStep(yBounds.min, yBounds.max),
         tickformat: ".0f",
         exponentformat: "none",
         showexponent: "none",
-        nticks: 10,
         automargin: true,
       },
       margin: { t: 60, r: 25, b: 115, l: 95 },
@@ -1376,6 +1461,9 @@ function renderDeflectedDeckChart() {
     },
     PLOTLY_CONFIG,
   );
+  enableZoomWindow(ui.deckChart);
+  enableSquareGrid(ui.deckChart);
+  bindChartClick(ui.deckChart, onDeckChartClick);
 }
 
 // ---------------------------------------------------------------------------
@@ -1639,6 +1727,31 @@ function buildSection(station) {
   return { station, origin, right, minOffset, maxOffset, profile, girders, overhangs, hasDeflected: Boolean(mesh) };
 }
 
+/** Vertical exaggeration typed by the user, or null to fit the section to the view. */
+function readVerticalExaggeration() {
+  const value = Number(ui.verticalExaggerationInput?.value);
+  return String(ui.verticalExaggerationInput?.value ?? "").trim() && Number.isFinite(value) && value > 0
+    ? value
+    : null;
+}
+
+/**
+ * Shows the exaggeration the section is drawn at: vertical scale over
+ * horizontal scale (screen pixels per ft of elevation / per ft of offset).
+ * With the box blank this is the fitted value, so the user sees what
+ * "Auto" currently means and can type it in to hold it between stations.
+ */
+function showSectionExaggeration() {
+  const input = ui.verticalExaggerationInput;
+  const layout = ui.sectionChart?._fullLayout;
+  if (!input || !layout?.xaxis?._length || !layout?.yaxis?._length) return;
+  const xSpan = Math.abs(layout.xaxis.range[1] - layout.xaxis.range[0]);
+  const ySpan = Math.abs(layout.yaxis.range[1] - layout.yaxis.range[0]);
+  if (!(xSpan > 0) || !(ySpan > 0)) return;
+  const current = layout.yaxis._length / ySpan / (layout.xaxis._length / xSpan);
+  input.placeholder = `Auto (${current >= 10 ? current.toFixed(0) : current.toFixed(1)})`;
+}
+
 function renderSectionChart() {
   if (!ui.sectionChart) return;
 
@@ -1670,6 +1783,7 @@ function renderSectionChart() {
   }
 
   const section = buildSection(station);
+  const exaggeration = readVerticalExaggeration();
   const stationText = BridgeAlignment.formatStation(station);
   if (section.empty) {
     Plotly.purge(ui.sectionChart);
@@ -1830,25 +1944,38 @@ function renderSectionChart() {
     ui.sectionChart,
     traces,
     {
-      font: PLOTLY_FONT,
+      ...PLOTLY_LAYOUT,
       title: { text: `<b>Section at Sta ${stationText}</b> - ${state.alignment.name}`, y: 0.97 },
       xaxis: {
         title: { text: "Offset from alignment (ft) - left negative, right positive" },
         range: [section.minOffset, section.maxOffset],
         zeroline: false,
       },
-      yaxis: { title: { text: "Elevation (ft)" }, tickformat: ".2f", automargin: true },
+      yaxis: {
+        title: { text: "Elevation (ft)" },
+        tickformat: ".2f",
+        automargin: true,
+        // A set exaggeration locks 1 ft of elevation to `exaggeration` ft of
+        // offset on screen; blank lets the section fill the view.
+        ...(exaggeration ? { scaleanchor: "x", scaleratio: exaggeration } : {}),
+      },
       hovermode: "closest",
       shapes,
       annotations,
-      margin: { t: 90, r: 25, b: 110, l: 80 },
+      margin: { t: 90, r: 25, b: 120, l: 80 },
       paper_bgcolor: "#fcfdff",
       plot_bgcolor: "#fcfdff",
       showlegend: true,
-      legend: { orientation: "h", x: 0, y: -0.2, yanchor: "top" },
+      // Pinned to the bottom of the chart (not a fraction of the plot height),
+      // so it stays clear of the axis title however short the chart is.
+      legend: { orientation: "h", x: 0, xref: "container", y: 0, yref: "container", yanchor: "bottom" },
     },
     PLOTLY_CONFIG,
   );
+  enableZoomWindow(ui.sectionChart);
+  showSectionExaggeration();
+  ui.sectionChart.on("plotly_relayout", showSectionExaggeration);
+  ui.sectionChart.on("plotly_update", showSectionExaggeration); // zoom window
 
   const deflections = section.girders.map((item) => item.isopach).filter((value) => value !== null);
   const parts = [
@@ -2275,6 +2402,7 @@ if (ui.alignmentFileInput) {
     refreshSections();
     renderDeflectedDeckChart();
   });
+  ui.verticalExaggerationInput.addEventListener("change", renderSectionChart);
   ui.sectionStationSelect.addEventListener("change", () => showSectionAt(Number(ui.sectionStationSelect.value)));
   document.getElementById("sectionPrevBtn").addEventListener("click", () => stepSection(-1));
   document.getElementById("sectionNextBtn").addEventListener("click", () => stepSection(1));
@@ -2316,7 +2444,7 @@ ui.graphGirderSelect.addEventListener("change", () => {
   renderPlanChart();
 });
 
-ui.planChart.addEventListener("plotly_click", (event) => {
+function onPlanChartClick(event) {
   if (event?.event?.button !== 0) return;
   const payload = event?.points?.[0]?.customdata;
   if (!payload) return;
@@ -2328,7 +2456,7 @@ ui.planChart.addEventListener("plotly_click", (event) => {
   ui.graphGirderSelect.value = girder;
   renderProfileChart();
   renderPlanChart();
-});
+}
 
 if (ui.deckSpanSelect) {
   ui.deckSpanSelect.addEventListener("change", () => {
@@ -2341,24 +2469,22 @@ if (ui.deckGirderSelect) {
   ui.deckGirderSelect.addEventListener("change", renderDeflectedDeckChart);
 }
 
-if (ui.deckChart) {
-  ui.deckChart.addEventListener("plotly_click", (event) => {
-    if (event?.event?.button !== 0) return;
-    const payload = event?.points?.[0]?.customdata;
-    // The alignment trace carries [station]; girders carry [span, girder].
-    if (Array.isArray(payload) && payload.length === 1 && Number.isFinite(payload[0])) {
-      showSectionAt(nearestListedStation(payload[0]));
-      return;
-    }
-    if (!payload || payload.length !== 2) return;
-    const [span, girder] = payload;
-    if (ui.deckSpanSelect.value !== span) {
-      ui.deckSpanSelect.value = span;
-      populateGirderSelect(span, ui.deckGirderSelect);
-    }
-    ui.deckGirderSelect.value = girder;
-    renderDeflectedDeckChart();
-  });
+function onDeckChartClick(event) {
+  if (event?.event?.button !== 0) return;
+  const payload = event?.points?.[0]?.customdata;
+  // The alignment trace carries [station]; girders carry [span, girder].
+  if (Array.isArray(payload) && payload.length === 1 && Number.isFinite(payload[0])) {
+    showSectionAt(nearestListedStation(payload[0]));
+    return;
+  }
+  if (!payload || payload.length !== 2) return;
+  const [span, girder] = payload;
+  if (ui.deckSpanSelect.value !== span) {
+    ui.deckSpanSelect.value = span;
+    populateGirderSelect(span, ui.deckGirderSelect);
+  }
+  ui.deckGirderSelect.value = girder;
+  renderDeflectedDeckChart();
 }
 
 const computeDeckBtn = document.getElementById("computeDeckBtn");

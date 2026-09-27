@@ -21,11 +21,144 @@
   max-width: none;
 }
 
-/* Rows that align inputs to the top (so status text below one input does not
-   push its neighbours down) still need buttons level with the input boxes. */
-@media (min-width: 768px) {
-  .label-offset {
-    padding-top: calc(0.92rem * 1.5 + 0.3rem);
+/* ---------- Workspace: inputs in a left sidebar, views on the right ---------- */
+
+.workspace {
+  display: grid;
+  grid-template-columns: 264px minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+/* Sticky, so the inputs stay in reach while the views are scrolled. */
+.workspace-sidebar {
+  position: sticky;
+  top: 0.75rem;
+  max-height: calc(100vh - 1.5rem);
+  overflow-y: auto;
+  padding: 0 0.75rem;
+  border: 1px solid #dce3ea;
+  border-radius: 0.55rem;
+  background: #f8fafc;
+  font-size: 0.8rem;
+}
+
+.workspace-main {
+  min-width: 0;
+}
+
+.sidebar-group {
+  padding: 0.65rem 0;
+}
+
+.sidebar-group + .sidebar-group {
+  border-top: 1px solid #dfe5ec;
+}
+
+.sidebar-title {
+  margin: 0 0 0.45rem;
+  color: #5a6b7d;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workspace-sidebar .form-label {
+  margin-bottom: 0.15rem;
+  color: #314255;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.workspace-sidebar .form-control,
+.workspace-sidebar .form-select,
+.workspace-sidebar .btn,
+.workspace-sidebar .input-group-sm > * {
+  font-size: 0.78rem;
+}
+
+.workspace-sidebar .btn-link {
+  font-size: 0.75rem;
+  text-decoration: none;
+}
+
+/* Status lines under inputs: small, and no gap when empty. */
+.workspace-sidebar .status-message {
+  margin: 0.2rem 0 0.4rem;
+  min-height: 0;
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.workspace-sidebar .status-message:empty {
+  display: none;
+}
+
+/* Two controls side by side (e.g. span + girder). */
+.sidebar-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+}
+
+/* A short field with its action button beside it. */
+.sidebar-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+
+.sidebar-field-narrow {
+  flex: 0 0 5.5rem;
+}
+
+.sidebar-row-action {
+  flex: 1 1 auto;
+}
+
+/* Export buttons in an even row. */
+.sidebar-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+}
+
+.sidebar-hint {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+/* The shared stylesheet gives every input/select a 44px minimum height for
+   the Leveling forms; let Bootstrap's (and the grid's) compact sizes apply
+   here instead. */
+.bridge-panel input,
+.bridge-panel select,
+.bridge-panel button {
+  min-height: 0;
+}
+
+/* Same for its button hover lift/shadow, which fights Bootstrap's buttons. */
+.bridge-panel .btn:hover,
+.bridge-panel .btn:active {
+  transform: none;
+  box-shadow: none;
+}
+
+.workspace-sidebar .progress {
+  height: 0.5rem;
+  font-size: 0.55rem;
+}
+@media (max-width: 991.98px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workspace-sidebar {
+    position: static;
+    max-height: none;
   }
 }
 
@@ -141,9 +274,6 @@
   font-size: 0.76rem;
 }
 
-.progress-wrap {
-  max-width: 980px;
-}
 
 .progress {
   height: 0.7rem;
@@ -166,7 +296,8 @@
 }
 
 /* Plotly sizes itself to the container's height, so give it a real one
-   rather than a min-height. */
+   rather than a min-height. The two views of a tab share the screen height,
+   so both are visible at once once the tabs are scrolled to the top. */
 .chart-frame {
   height: clamp(520px, 78vh, 1200px);
   border: 1px solid #dce3ea;
@@ -175,6 +306,42 @@
   background: #fcfdff;
 }
 
-.chart-frame-section {
-  height: clamp(460px, 62vh, 900px);
+.chart-frame-upper {
+  height: max(340px, calc(56vh - 60px));
+}
+
+.chart-frame-lower {
+  height: max(280px, calc(44vh - 60px));
+}
+
+.chart-status {
+  margin-bottom: 0.3rem;
+  min-height: 0;
+}
+
+.chart-status:empty {
+  display: none;
+}
+
+/* View tools (zoom, pan, reset...) in a horizontal strip at the top left,
+   always shown, instead of Plotly's hover-only strip at the top right. */
+.chart-frame .modebar-container {
+  left: 6px !important;
+  right: auto !important;
+}
+
+/* One row: Plotly floats the groups, which wrap under each other when the
+   strip is given little width. */
+.chart-frame .modebar {
+  left: 0 !important;
+  right: auto !important;
+  display: flex !important;
+  flex-wrap: nowrap;
+  width: max-content;
+}
+
+.chart-frame .modebar-group {
+  display: flex !important;
+  float: none !important;
+  background: rgba(255, 255, 255, 0.85) !important;
 }
