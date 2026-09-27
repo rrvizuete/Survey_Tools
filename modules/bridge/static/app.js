@@ -167,6 +167,7 @@ const ui = {
   deckGirderSelect: document.getElementById("deckGirderSelect"),
   deckChart: document.getElementById("deckChart"),
   deckStatus: document.getElementById("deckStatus"),
+  planSurfaceSelect: document.getElementById("planSurfaceSelect"),
   overhangInput: document.getElementById("overhangInput"),
   alignmentFileInput: document.getElementById("alignmentFileInput"),
   alignmentUploadStatus: document.getElementById("alignmentUploadStatus"),
@@ -1224,18 +1225,295 @@ function computeDeflectedDeck() {
   return true;
 }
 
-/**
- * Samples the isopach on a regular grid clipped to the deck outline, so the
- * deflection field is shown across the whole deck rather than only where the
- * DTM happens to place vertices. Areas past the span ends read 0, which is
- * physically correct -- the deflection parabola is zero at every support.
- */
-function buildIsopachHeatmap(rings) {
-  const mesh = state.isopachMesh;
-  if (!mesh || !rings.length) return null;
-  const surface = state.deflectedDeck?.deckSurface;
-  const extendsDeck = Boolean(surface?.extends);
+// Pale = little or no deflection, deep red = the most (Plotly's YlOrRd, reversed).
+const DEFLECTION_COLORSCALE = [
+  [0, "#ffffcc"],
+  [0.125, "#ffeda0"],
+  [0.25, "#fed976"],
+  [0.375, "#feb24c"],
+  [0.5, "#fd8d3c"],
+  [0.625, "#fc4e2a"],
+  [0.75, "#e31a1c"],
+  [0.875, "#bd0026"],
+  [1, "#800026"],
+];
 
+// Low = dark blue, high = yellow (Plotly's Viridis).
+const ELEVATION_COLORSCALE = [
+  [0, "#440154"],
+  [0.125, "#472d7b"],
+  [0.25, "#3b528b"],
+  [0.375, "#2c728e"],
+  [0.5, "#21918c"],
+  [0.625, "#28ae80"],
+  [0.75, "#5ec962"],
+  [0.875, "#addc30"],
+  [1, "#fde725"],
+];
+
+// Surfaces the deck plan view can shade. The isopach and deflected deck need
+// Compute deck; the DTM can be shown as soon as it is loaded.
+const PLAN_SURFACES = {
+  isopach: { title: "Deflection (ft)", hover: "Deflection", colorscale: DEFLECTION_COLORSCALE },
+  deflected: { title: "Deflected deck elev. (ft)", hover: "Deflected", colorscale: ELEVATION_COLORSCALE },
+  dtm: { title: "DTM elev. (ft)", hover: "DTM", colorscale: ELEVATION_COLORSCALE },
+};
+
+// Grid cells along the longer side of the deck, and image pixels along it.
+const PLAN_SURFACE_CELLS = 240;
+const PLAN_SURFACE_PIXELS = 3000;
+
+function selectedPlanSurface() {
+  const mode = ui.planSurfaceSelect?.value;
+  return PLAN_SURFACES[mode] ? mode : "isopach";
+}
+
+/** Plotly-style colorscale lookup: t in [0, 1] -> [r, g, b]. */
+function colorscaleRgb(colorscale, t) {
+  const clamped = Math.max(0, Math.min(1, t));
+  const hex = (color) => [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16));
+  for (let i = 1; i < colorscale.length; i += 1) {
+    const [t1, c1] = colorscale[i];
+    if (clamped > t1) continue;
+    const [t0, c0] = colorscale[i - 1];
+    const f = t1 > t0 ? (clamped - t0) / (t1 - t0) : 0;
+    const a = hex(c0);
+    const b = hex(c1);
+    return a.map((value, k) => Math.round(value + (b[k] - value) * f));
+  }
+  return hex(colorscale[colorscale.length - 1][1]);
+}
+
+/**
+ * Plan value function and domain for a surface mode, or null when that
+ * surface is not available yet. Areas past the span ends read 0 deflection,
+ * which is physically correct -- the deflection parabola is zero at every
+ * support.
+ */
+function planSurfaceSampler(mode, rings) {
+  if (mode === "dtm") {
+    const tin = state.dtmTin;
+    if (!tin?.triangleCount) return null;
+    return {
+      inside: (e, n) => BridgeIsopach.pointInRings(e, n, rings),
+      value: (e, n) => tin.sample(e, n),
+      extendsDeck: false,
+    };
+  }
+
+  const mesh = state.isopachMesh;
+  const surface = state.deflectedDeck?.deckSurface;
+  if (!mesh || !surface) return null;
+  const extendsDeck = Boolean(surface.extends);
+  const isopachAt = extendsDeck ? (e, n) => surface.isopachAt(e, n) : (e, n) => mesh.sample(e, n)?.value ?? 0;
+  const inside = (e, n) => BridgeIsopach.pointInRings(e, n, rings) || (extendsDeck && surface.inOverhangBand(e, n));
+
+  if (mode === "deflected") {
+    return {
+      inside,
+      value: (e, n) => {
+        const deck = surface.sample(e, n);
+        return deck ? deck.z + isopachAt(e, n) : null;
+      },
+      extendsDeck,
+    };
+  }
+  return { inside, value: isopachAt, extendsDeck };
+}
+
+/**
+ * Fills empty cells from their valid neighbours, a few cells deep, so the
+ * smoothed image has real colour right up to (and just past) the deck edge
+ * before it is clipped there.
+ */
+function dilateGrid(z, passes) {
+  let grid = z;
+  for (let pass = 0; pass < passes; pass += 1) {
+    grid = grid.map((row, j) =>
+      row.map((value, i) => {
+        if (value !== null) return value;
+        let sum = 0;
+        let count = 0;
+        for (let dj = -1; dj <= 1; dj += 1) {
+          for (let di = -1; di <= 1; di += 1) {
+            const neighbour = grid[j + dj]?.[i + di];
+            if (neighbour === null || neighbour === undefined) continue;
+            sum += neighbour;
+            count += 1;
+          }
+        }
+        return count ? sum / count : null;
+      }),
+    );
+  }
+  return grid;
+}
+
+/**
+ * The deck's plan footprint as canvas fills: the DTM outline rings (even-odd,
+ * so holes stay empty) and, with an overhang, one quad per deck side edge out
+ * to the screed line.
+ */
+function planSurfaceMaskShapes(rings, extendsDeck) {
+  const shapes = [{ rings, evenOdd: true }];
+  const deck = state.deflectedDeck;
+  if (!extendsDeck || !deck?.deckSurface?.sides) return shapes;
+
+  // A hair past the offset so the clip does not shave the screed line.
+  const offset = deck.overhangOffset + OVERHANG_TOLERANCE;
+  const quads = [];
+  deck.deckSurface.sides.edges.forEach((edge) => {
+    if (!edge.na || !edge.nb) return;
+    const quad = [
+      edge.a,
+      edge.b,
+      { e: edge.b.e + edge.nb.e * offset, n: edge.b.n + edge.nb.n * offset },
+      { e: edge.a.e + edge.na.e * offset, n: edge.a.n + edge.na.n * offset },
+    ];
+    // Wind every quad the same way so one nonzero fill unions them. Filling
+    // them one by one leaves anti-aliased seams along their shared sides.
+    let area = 0;
+    quad.forEach((p, i) => {
+      const q = quad[(i + 1) % quad.length];
+      area += p.e * q.n - q.e * p.n;
+    });
+    quads.push(area < 0 ? quad.reverse() : quad);
+  });
+  if (quads.length) shapes.push({ rings: quads, evenOdd: false });
+  return shapes;
+}
+
+/**
+ * Paints the grid as a smooth image and cuts it to the exact deck footprint.
+ * A heatmap trace can only show whole grid cells, which leaves a staircase
+ * along any deck edge that is not parallel to an axis.
+ */
+function renderPlanSurfaceImage(grid, colorscale, zmin, zmax, shapes) {
+  const { xs, ys, step } = grid;
+  const cols = xs.length;
+  const rows = ys.length;
+  const filled = dilateGrid(grid.z, 3);
+  const range = zmax - zmin;
+
+  const cells = document.createElement("canvas");
+  cells.width = cols;
+  cells.height = rows;
+  const cellContext = cells.getContext("2d");
+  const pixels = cellContext.createImageData(cols, rows);
+  for (let j = 0; j < rows; j += 1) {
+    // Canvas rows run top-down; northings run bottom-up.
+    const rowOffset = (rows - 1 - j) * cols;
+    for (let i = 0; i < cols; i += 1) {
+      const value = filled[j][i];
+      if (value === null) continue;
+      const [r, g, b] = colorscaleRgb(colorscale, range > 0 ? (value - zmin) / range : 0.5);
+      const index = (rowOffset + i) * 4;
+      pixels.data[index] = r;
+      pixels.data[index + 1] = g;
+      pixels.data[index + 2] = b;
+      pixels.data[index + 3] = 255;
+    }
+  }
+  cellContext.putImageData(pixels, 0, 0);
+
+  // Each cell's centre sits on its grid point, so the image spans half a
+  // cell past the first and last grid points.
+  const x0 = xs[0] - step / 2;
+  const yTop = ys[rows - 1] + step / 2;
+  const sizeX = cols * step;
+  const sizeY = rows * step;
+  const scale = PLAN_SURFACE_PIXELS / Math.max(cols, rows);
+  const width = Math.max(1, Math.round(cols * scale));
+  const height = Math.max(1, Math.round(rows * scale));
+
+  const image = document.createElement("canvas");
+  image.width = width;
+  image.height = height;
+  const context = image.getContext("2d");
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(cells, 0, 0, width, height);
+
+  const mask = document.createElement("canvas");
+  mask.width = width;
+  mask.height = height;
+  const maskContext = mask.getContext("2d");
+  maskContext.fillStyle = "#000";
+  const toPixel = (point) => [((point.e - x0) / sizeX) * width, ((yTop - point.n) / sizeY) * height];
+  shapes.forEach((shape) => {
+    maskContext.beginPath();
+    shape.rings.forEach((ring) => {
+      ring.forEach((point, index) => {
+        const [px, py] = toPixel(point);
+        if (index === 0) maskContext.moveTo(px, py);
+        else maskContext.lineTo(px, py);
+      });
+      maskContext.closePath();
+    });
+    maskContext.fill(shape.evenOdd ? "evenodd" : "nonzero");
+  });
+
+  context.globalCompositeOperation = "destination-in";
+  context.drawImage(mask, 0, 0);
+
+  return {
+    source: image.toDataURL("image/png"),
+    xref: "x",
+    yref: "y",
+    x: x0,
+    y: yTop,
+    sizex: sizeX,
+    sizey: sizeY,
+    sizing: "stretch",
+    xanchor: "left",
+    yanchor: "top",
+    layer: "below",
+  };
+}
+
+// Painting the image is the slow part; reuse it until the data or mode changes.
+let planSurfaceCache = { key: null, value: null };
+
+/**
+ * Samples the selected surface on a regular grid over the deck, so it is
+ * shown across the whole deck rather than only where the DTM happens to
+ * place vertices. Returns the hover grid (null off the deck), its value
+ * range, and the clipped image to draw.
+ */
+function buildPlanSurface(rings, mode) {
+  const key = `${state.planRevision}|${mode}`;
+  if (planSurfaceCache.key === key) return planSurfaceCache.value;
+
+  const value = computePlanSurface(rings, mode);
+  planSurfaceCache = { key, value };
+  return value;
+}
+
+function computePlanSurface(rings, mode) {
+  if (!rings.length) return null;
+  const sampler = planSurfaceSampler(mode, rings);
+  if (!sampler) return null;
+  const shapes = planSurfaceMaskShapes(rings, sampler.extendsDeck);
+  const grid = samplePlanGrid(shapes, sampler);
+  if (!grid) return null;
+
+  let zmin = Infinity;
+  let zmax = -Infinity;
+  grid.z.forEach((row) =>
+    row.forEach((value) => {
+      if (value === null) return;
+      if (value < zmin) zmin = value;
+      if (value > zmax) zmax = value;
+    }),
+  );
+  if (!Number.isFinite(zmin)) return null;
+
+  const surface = PLAN_SURFACES[mode];
+  return { ...grid, zmin, zmax, image: renderPlanSurfaceImage(grid, surface.colorscale, zmin, zmax, shapes) };
+}
+
+/** Grid over the footprint `shapes` (which reach the screed line with an overhang). */
+function samplePlanGrid(shapes, { inside, value }) {
   let minE = Infinity;
   let maxE = -Infinity;
   let minN = Infinity;
@@ -1246,31 +1524,22 @@ function buildIsopachHeatmap(rings) {
     if (point.n < minN) minN = point.n;
     if (point.n > maxN) maxN = point.n;
   };
-  rings.forEach((ring) => ring.forEach(include));
-  // With an overhang offset the deck reaches the screed line, past the DTM.
-  if (extendsDeck) mesh.overhangEdges.forEach((edge) => edge.points.forEach(include));
+  shapes.forEach((shape) => shape.rings.forEach((ring) => ring.forEach(include)));
 
   const width = maxE - minE;
   const height = maxN - minN;
   if (!(width > 0) || !(height > 0)) return null;
 
-  const longest = 220;
-  const step = Math.max(width, height) / longest;
-  const cols = Math.max(2, Math.ceil(width / step) + 1);
-  const rows = Math.max(2, Math.ceil(height / step) + 1);
+  const step = Math.max(width, height) / PLAN_SURFACE_CELLS;
+  // One extra cell all round so the image reaches past the deck edge.
+  const cols = Math.max(2, Math.ceil(width / step) + 3);
+  const rows = Math.max(2, Math.ceil(height / step) + 3);
 
-  const xs = Array.from({ length: cols }, (_, i) => minE + i * step);
-  const ys = Array.from({ length: rows }, (_, j) => minN + j * step);
-  const z = ys.map((n) =>
-    xs.map((e) => {
-      if (!BridgeIsopach.pointInRings(e, n, rings) && !(extendsDeck && surface.inOverhangBand(e, n))) return null;
-      if (extendsDeck) return surface.isopachAt(e, n);
-      const hit = mesh.sample(e, n);
-      return hit ? hit.value : 0;
-    }),
-  );
+  const xs = Array.from({ length: cols }, (_, i) => minE + (i - 1) * step);
+  const ys = Array.from({ length: rows }, (_, j) => minN + (j - 1) * step);
+  const z = ys.map((n) => xs.map((e) => (inside(e, n) ? value(e, n) : null)));
 
-  return { x: xs, y: ys, z };
+  return { xs, ys, z, step };
 }
 
 function renderDeflectedDeckChart() {
@@ -1279,30 +1548,34 @@ function renderDeflectedDeckChart() {
   const selectedSpan = ui.deckSpanSelect?.value ?? "";
   const selectedGirder = ui.deckGirderSelect?.value ?? "";
   const traces = [];
+  const images = [];
   const outlineRings = getDeckOutlineRings();
 
-  if (state.deflectedDeck) {
-    const heatmap = buildIsopachHeatmap(outlineRings);
-    if (heatmap) {
-      traces.push({
-        type: "heatmap",
-        x: heatmap.x,
-        y: heatmap.y,
-        z: heatmap.z,
-        colorscale: "YlOrRd",
-        // Plotly's YlOrRd runs dark-red -> pale, so reverse it: pale means
-        // little or no deflection, deep red means the most.
-        reversescale: true,
-        zsmooth: "best",
-        hoverongaps: false,
-        showscale: true,
-        // title.side defaults to "top", which sits right in the corner where
-        // Plotly's modebar (zoom/pan/reset) floats, hiding it behind the text.
-        colorbar: { title: { text: "Deflection (ft)", side: "right" }, thickness: 12, tickformat: ".3f" },
-        name: "Deflection",
-        hovertemplate: "N %{y:.3f}<br>E %{x:.3f}<br>Deflection %{z:.3f} ft<extra></extra>",
-      });
-    }
+  const mode = selectedPlanSurface();
+  const planSurface = PLAN_SURFACES[mode];
+  const shaded = buildPlanSurface(outlineRings, mode);
+  if (shaded) {
+    images.push(shaded.image);
+    // The image carries the colour; this invisible heatmap supplies the hover
+    // readout and the colorbar.
+    traces.push({
+      type: "heatmap",
+      x: shaded.xs,
+      y: shaded.ys,
+      z: shaded.z,
+      zmin: shaded.zmin,
+      zmax: shaded.zmax,
+      colorscale: planSurface.colorscale,
+      opacity: 0,
+      zsmooth: false,
+      hoverongaps: false,
+      showscale: true,
+      // title.side defaults to "top", which sits right in the corner where
+      // Plotly's modebar (zoom/pan/reset) floats, hiding it behind the text.
+      colorbar: { title: { text: planSurface.title, side: "right" }, thickness: 12, tickformat: ".3f" },
+      name: planSurface.hover,
+      hovertemplate: `N %{y:.3f}<br>E %{x:.3f}<br>${planSurface.hover} %{z:.3f} ft<extra></extra>`,
+    });
   }
 
   outlineRings.forEach((ring, index) => {
@@ -1437,6 +1710,7 @@ function renderDeflectedDeckChart() {
       ...PLOTLY_LAYOUT,
       uirevision: state.planRevision,
       title: "<b>Deflected Deck - Plan View (N/E)</b>",
+      images,
       xaxis: {
         title: { text: "Easting (ft)", standoff: 34 },
         tickformat: ".0f",
@@ -2367,6 +2641,7 @@ ui.dtmFileInput.addEventListener("change", async () => {
     state.dtmTin = null;
     state.dtmBoundary = null;
     state.deflectedDeck = null;
+    state.planRevision += 1;
     ui.dtmUploadStatus.textContent = `Error loading DTM: ${error.message}`;
     logLine(`DTM ERROR: ${error.message}`);
     refreshSections();
@@ -2467,6 +2742,10 @@ if (ui.deckSpanSelect) {
 
 if (ui.deckGirderSelect) {
   ui.deckGirderSelect.addEventListener("change", renderDeflectedDeckChart);
+}
+
+if (ui.planSurfaceSelect) {
+  ui.planSurfaceSelect.addEventListener("change", renderDeflectedDeckChart);
 }
 
 function onDeckChartClick(event) {
