@@ -963,6 +963,18 @@ function getDeckOutlineRings() {
   return hull.length >= 3 ? [hull] : [];
 }
 
+/**
+ * Declared hole/island boundaries, which getDeckOutlineRings leaves out when
+ * the surface also declares an outer boundary. (Rings traced from the TIN
+ * already include its holes.)
+ */
+function getDeckExclusionRings() {
+  const boundaries = state.dtm?.boundaries ?? [];
+  const isExclusion = (boundary) => boundary.type === "island" || boundary.type === "hole";
+  if (!boundaries.some((boundary) => !isExclusion(boundary))) return [];
+  return boundaries.filter(isExclusion).map((boundary) => boundary.points);
+}
+
 function logDeckReferenceStats() {
   const deckZ = minMax(state.dtm.points.map((point) => point.z));
   const isopach = minMax(state.deflectedDeck.points.map((point) => point.isopach));
@@ -1489,8 +1501,10 @@ function buildPlanSurface(rings, mode) {
   return value;
 }
 
-function computePlanSurface(rings, mode) {
-  if (!rings.length) return null;
+function computePlanSurface(outlineRings, mode) {
+  if (!outlineRings.length) return null;
+  // Even-odd over the outline and any declared holes, so holes stay empty.
+  const rings = outlineRings.concat(getDeckExclusionRings());
   const sampler = planSurfaceSampler(mode, rings);
   if (!sampler) return null;
   const shapes = planSurfaceMaskShapes(rings, sampler.extendsDeck);
