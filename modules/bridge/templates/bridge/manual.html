@@ -153,8 +153,9 @@
       <ul>
         <li><strong>Zoom window</strong> (magnifier, on by default): drag a box corner to corner and the view zooms to exactly
           that box. On the plan views, which keep true proportions, the view widens in one direction to fit the box.</li>
-        <li><strong>Pan</strong>, <strong>Zoom in</strong> / <strong>Zoom out</strong>, and <strong>Reset axes</strong> (home) to
-          return to the full view.</li>
+        <li><strong>Pan</strong> and <strong>Zoom in</strong> / <strong>Zoom out</strong>.</li>
+        <li><strong>Zoom extents</strong> (four arrows) fits everything drawn in the chart. <strong>Reset axes</strong> (home)
+          returns to the chart's first view.</li>
         <li><strong>Download</strong> (camera) saves the chart as an image.</li>
       </ul>
       <p>The plan views keep true proportions and draw a square grid, the same spacing north and east, which refines
@@ -177,7 +178,13 @@
       </p>
       <h3>Reading the plan view</h3>
       <ul>
-        <li>The colour map shows the deflection across the deck: pale is little or none, deep red the most.</li>
+        <li>
+          <span class="ui">Plan view surface</span> picks what the colour map shows: the
+          <span class="ui">Isopach</span> (deflection; pale is little or none, deep red the most), the
+          <span class="ui">Deflected deck elevations</span>, or the <span class="ui">Top of deck DTM</span> as imported.
+          The two elevation maps run from dark blue (low) to yellow (high). The DTM can be shown as soon as it is
+          loaded; the other two need <span class="ui">Compute deck</span>. Hover anywhere on the deck to read the value.
+        </li>
         <li>Black is the deck outline, grey the girders. Dashed orange lines are the overhang edges (screed lines).</li>
         <li>Pick a <span class="ui">Span</span>/<span class="ui">Girder</span> (or click a girder) to highlight it and label
           its deflected deck points with their export names. Hover any point for its elevations.</li>
