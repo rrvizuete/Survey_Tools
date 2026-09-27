@@ -147,6 +147,25 @@
                 <option value="deflected">Deflected deck elevations</option>
                 <option value="dtm">Top of deck DTM (as imported)</option>
               </select>
+              <div class="sidebar-row">
+                <div class="form-check sidebar-row-action mb-1">
+                  <input class="form-check-input" type="checkbox" id="contoursToggle" />
+                  <label class="form-check-label" for="contoursToggle">Contours</label>
+                </div>
+                <div class="sidebar-field-narrow">
+                  <label for="contourIntervalInput" class="form-label">Interval (ft)</label>
+                  <input
+                    class="form-control form-control-sm"
+                    id="contourIntervalInput"
+                    type="number"
+                    value="0.1"
+                    min="0.001"
+                    step="0.05"
+                    title="Contour interval for the shaded surface. Every fifth contour is drawn heavier."
+                  />
+                </div>
+              </div>
+              <p id="contourStatus" class="status-message"></p>
               <p class="sidebar-hint mt-2 mb-0">Isopach and deflected deck need Compute deck.</p>
             </div>
 

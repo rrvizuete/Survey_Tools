@@ -180,6 +180,9 @@ const ui = {
   deckChart: document.getElementById("deckChart"),
   deckStatus: document.getElementById("deckStatus"),
   planSurfaceSelect: document.getElementById("planSurfaceSelect"),
+  contoursToggle: document.getElementById("contoursToggle"),
+  contourIntervalInput: document.getElementById("contourIntervalInput"),
+  contourStatus: document.getElementById("contourStatus"),
   overhangInput: document.getElementById("overhangInput"),
   alignmentFileInput: document.getElementById("alignmentFileInput"),
   alignmentUploadStatus: document.getElementById("alignmentUploadStatus"),
@@ -1417,10 +1420,9 @@ function planSurfaceMaskShapes(rings, extendsDeck) {
  * along any deck edge that is not parallel to an axis.
  */
 function renderPlanSurfaceImage(grid, colorscale, zmin, zmax, shapes) {
-  const { xs, ys, step } = grid;
+  const { xs, ys, step, filled } = grid;
   const cols = xs.length;
   const rows = ys.length;
-  const filled = dilateGrid(grid.z, 3);
   const range = zmax - zmin;
 
   const cells = document.createElement("canvas");
@@ -1539,7 +1541,245 @@ function computePlanSurface(outlineRings, mode) {
   if (!Number.isFinite(zmin)) return null;
 
   const surface = PLAN_SURFACES[mode];
-  return { ...grid, zmin, zmax, image: renderPlanSurfaceImage(grid, surface.colorscale, zmin, zmax, shapes) };
+  grid.filled = dilateGrid(grid.z, 3);
+  return {
+    ...grid,
+    zmin,
+    zmax,
+    inside: sampler.inside,
+    contours: new Map(), // by interval
+    image: renderPlanSurfaceImage(grid, surface.colorscale, zmin, zmax, shapes),
+  };
+}
+
+// Heavier, labelled index contour every this many intervals.
+const CONTOUR_INDEX_EVERY = 5;
+// More levels than this are unreadable at any zoom (and slow to trace).
+const MAX_CONTOUR_LEVELS = 300;
+
+/** Blank or invalid gives null; the caller reports it. */
+function readContourInterval() {
+  const value = Number(ui.contourIntervalInput?.value);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/**
+ * Marching squares over the filled grid: every contour at `level`, as
+ * polylines of {e, n}. Crossings are keyed by the grid edge they sit on, so
+ * the segments of neighbouring cells chain into continuous lines.
+ */
+function traceContourLevel(surface, level) {
+  const { xs, ys, filled } = surface;
+  const segments = [];
+  const points = new Map();
+
+  const crossing = (key, e0, n0, v0, e1, n1, v1) => {
+    if (!points.has(key)) {
+      const t = (level - v0) / (v1 - v0);
+      points.set(key, { e: e0 + (e1 - e0) * t, n: n0 + (n1 - n0) * t });
+    }
+    return key;
+  };
+
+  for (let j = 0; j + 1 < ys.length; j += 1) {
+    for (let i = 0; i + 1 < xs.length; i += 1) {
+      const v00 = filled[j][i];
+      const v10 = filled[j][i + 1];
+      const v11 = filled[j + 1][i + 1];
+      const v01 = filled[j + 1][i];
+      if (v00 === null || v10 === null || v11 === null || v01 === null) continue;
+
+      const code = (v00 >= level ? 1 : 0) | (v10 >= level ? 2 : 0) | (v11 >= level ? 4 : 0) | (v01 >= level ? 8 : 0);
+      if (code === 0 || code === 15) continue;
+
+      const [e0, e1, n0, n1] = [xs[i], xs[i + 1], ys[j], ys[j + 1]];
+      const bottom = () => crossing(`h${i},${j}`, e0, n0, v00, e1, n0, v10);
+      const right = () => crossing(`v${i + 1},${j}`, e1, n0, v10, e1, n1, v11);
+      const top = () => crossing(`h${i},${j + 1}`, e0, n1, v01, e1, n1, v11);
+      const left = () => crossing(`v${i},${j}`, e0, n0, v00, e0, n1, v01);
+      const add = (a, b) => segments.push([a(), b()]);
+
+      switch (code) {
+        case 1: case 14: add(left, bottom); break;
+        case 2: case 13: add(bottom, right); break;
+        case 3: case 12: add(left, right); break;
+        case 4: case 11: add(right, top); break;
+        case 6: case 9: add(bottom, top); break;
+        case 7: case 8: add(left, top); break;
+        case 5: case 10: {
+          // Saddle: the cell centre decides which corners connect.
+          const centreAbove = (v00 + v10 + v11 + v01) / 4 >= level;
+          if ((code === 5) === centreAbove) {
+            add(left, top);
+            add(bottom, right);
+          } else {
+            add(left, bottom);
+            add(right, top);
+          }
+          break;
+        }
+        default: break;
+      }
+    }
+  }
+
+  // Chain the segments through their shared edge keys.
+  const byKey = new Map();
+  segments.forEach((segment, index) => {
+    segment.forEach((key) => {
+      if (!byKey.has(key)) byKey.set(key, []);
+      byKey.get(key).push(index);
+    });
+  });
+  const used = new Array(segments.length).fill(false);
+  const walk = (key, from) => {
+    const keys = [];
+    let current = key;
+    let previous = from;
+    for (;;) {
+      const next = (byKey.get(current) || []).find((index) => !used[index] && index !== previous);
+      if (next === undefined) break;
+      used[next] = true;
+      const [a, b] = segments[next];
+      current = a === current ? b : a;
+      previous = next;
+      keys.push(current);
+    }
+    return keys;
+  };
+
+  const lines = [];
+  segments.forEach((segment, index) => {
+    if (used[index]) return;
+    used[index] = true;
+    const forward = walk(segment[1], index);
+    const backward = walk(segment[0], index);
+    const keys = backward.reverse().concat(segment, forward);
+    lines.push(keys.map((key) => points.get(key)));
+  });
+  return lines;
+}
+
+/**
+ * Cuts contour lines at the deck edge. The filled grid runs a few cells past
+ * the deck so lines reach it; where a line leaves the deck, the crossing is
+ * found by bisection so the line stops right on the edge.
+ */
+function clipToDeck(lines, inside) {
+  const pieces = [];
+  const edgePoint = (a, b) => {
+    // a is on the deck, b is off it.
+    let lo = 0;
+    let hi = 1;
+    for (let k = 0; k < 12; k += 1) {
+      const mid = (lo + hi) / 2;
+      if (inside(a.e + (b.e - a.e) * mid, a.n + (b.n - a.n) * mid)) lo = mid;
+      else hi = mid;
+    }
+    return { e: a.e + (b.e - a.e) * lo, n: a.n + (b.n - a.n) * lo };
+  };
+
+  lines.forEach((line) => {
+    let piece = [];
+    let previous = null;
+    let previousInside = false;
+    line.forEach((point) => {
+      const isInside = inside(point.e, point.n);
+      if (isInside && !previousInside && previous) piece.push(edgePoint(point, previous));
+      if (isInside) piece.push(point);
+      if (!isInside && previousInside) {
+        piece.push(edgePoint(previous, point));
+        if (piece.length > 1) pieces.push(piece);
+        piece = [];
+      }
+      previous = point;
+      previousInside = isInside;
+    });
+    if (piece.length > 1) pieces.push(piece);
+  });
+  return pieces;
+}
+
+/**
+ * Contour overlay for the shaded surface: minor and index lines plus labels
+ * on the index contours (or on every contour when no index one falls on the
+ * deck). Traced once per surface and interval.
+ */
+function buildPlanContours(surface, interval) {
+  const first = Math.ceil(surface.zmin / interval - 1e-9);
+  const last = Math.floor(surface.zmax / interval + 1e-9);
+  const levels = last - first + 1;
+  if (levels > MAX_CONTOUR_LEVELS) return { tooMany: levels };
+  if (surface.contours.has(interval)) return surface.contours.get(interval);
+
+  const decimals = Math.min(4, (String(interval).split(".")[1] || "").length);
+  const contours = [];
+  for (let k = first; k <= last; k += 1) {
+    const level = k * interval;
+    const pieces = clipToDeck(traceContourLevel(surface, level), surface.inside);
+    if (pieces.length) contours.push({ level, index: k % CONTOUR_INDEX_EVERY === 0, pieces });
+  }
+
+  const result = { levels: contours.length, traces: contourTraces(contours, decimals, surface.step) };
+  surface.contours.set(interval, result);
+  return result;
+}
+
+function contourTraces(contours, decimals, step) {
+  const lineTrace = (index) => {
+    const x = [];
+    const y = [];
+    contours
+      .filter((contour) => contour.index === index)
+      .forEach((contour) =>
+        contour.pieces.forEach((piece) => {
+          piece.forEach((point) => {
+            x.push(point.e);
+            y.push(point.n);
+          });
+          x.push(null);
+          y.push(null);
+        }),
+      );
+    return {
+      x,
+      y,
+      mode: "lines",
+      line: { width: index ? 1.5 : 0.7, color: "rgba(33,37,41,0.7)" },
+      name: index ? "Index contours" : "Contours",
+      hoverinfo: "skip",
+    };
+  };
+
+  // One label per long enough line, at its middle.
+  const labelled = contours.some((contour) => contour.index) ? contours.filter((c) => c.index) : contours;
+  const labels = { x: [], y: [], text: [] };
+  labelled.forEach((contour) =>
+    contour.pieces.forEach((piece) => {
+      const lengths = [0];
+      for (let i = 1; i < piece.length; i += 1) {
+        lengths.push(lengths[i - 1] + Math.hypot(piece[i].e - piece[i - 1].e, piece[i].n - piece[i - 1].n));
+      }
+      const total = lengths[lengths.length - 1];
+      if (total < 15 * step) return;
+      const i = lengths.findIndex((length) => length >= total / 2);
+      labels.x.push(piece[i].e);
+      labels.y.push(piece[i].n);
+      labels.text.push(contour.level.toFixed(decimals));
+    }),
+  );
+
+  return [
+    lineTrace(false),
+    lineTrace(true),
+    {
+      ...labels,
+      mode: "text",
+      textfont: { size: 10, color: "#212529" },
+      name: "Contour labels",
+      hoverinfo: "skip",
+    },
+  ];
 }
 
 /** Grid over the footprint `shapes` (which reach the screed line with an overhang). */
@@ -1570,6 +1810,38 @@ function samplePlanGrid(shapes, { inside, value }) {
   const z = ys.map((n) => xs.map((e) => (inside(e, n) ? value(e, n) : null)));
 
   return { xs, ys, z, step };
+}
+
+/** Adds the contour lines for the shaded surface, if turned on, and reports on them. */
+function addContourOverlay(traces, shaded) {
+  const status = ui.contourStatus;
+  const setStatus = (text) => {
+    if (status) status.textContent = text;
+  };
+  if (!ui.contoursToggle?.checked || !shaded) {
+    setStatus("");
+    return;
+  }
+
+  const interval = readContourInterval();
+  if (interval === null) {
+    setStatus("Enter a contour interval greater than 0.");
+    return;
+  }
+  const contours = buildPlanContours(shaded, interval);
+  if (contours.tooMany) {
+    setStatus(
+      `A ${interval} ft interval gives ${contours.tooMany} contours over this surface; ` +
+        `use a larger interval (at most ${MAX_CONTOUR_LEVELS} contours).`,
+    );
+    return;
+  }
+  contours.traces.forEach((trace) => traces.push(trace));
+  setStatus(
+    contours.levels
+      ? `${contours.levels} contour(s) at ${interval} ft; every ${CONTOUR_INDEX_EVERY}th is heavier.`
+      : `No ${interval} ft contour falls within this surface's range.`,
+  );
 }
 
 function renderDeflectedDeckChart() {
@@ -1607,6 +1879,7 @@ function renderDeflectedDeckChart() {
       hovertemplate: `N %{y:.3f}<br>E %{x:.3f}<br>${planSurface.hover} %{z:.3f} ft<extra></extra>`,
     });
   }
+  addContourOverlay(traces, shaded);
 
   outlineRings.forEach((ring, index) => {
     if (ring.length < 3) return;
@@ -2820,6 +3093,11 @@ if (ui.deckGirderSelect) {
 
 if (ui.planSurfaceSelect) {
   ui.planSurfaceSelect.addEventListener("change", renderDeflectedDeckChart);
+}
+
+if (ui.contoursToggle) {
+  ui.contoursToggle.addEventListener("change", renderDeflectedDeckChart);
+  ui.contourIntervalInput.addEventListener("change", renderDeflectedDeckChart);
 }
 
 function onDeckChartClick(event) {

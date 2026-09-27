@@ -78,6 +78,21 @@
   font-size: 0.78rem;
 }
 
+/* Checkboxes: undo the shared stylesheet's padded 44px inputs. */
+.workspace-sidebar .form-check-input {
+  width: 1em;
+  height: 1em;
+  padding: 0;
+  margin-top: 0.2em;
+  border-radius: 0.25em;
+}
+
+.workspace-sidebar .form-check-label {
+  color: #314255;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
 /* Section station list: scrolls rather than running off the screen. */
 .station-menu {
   max-height: 16rem;
