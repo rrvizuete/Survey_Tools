@@ -61,14 +61,24 @@ const ZOOM_WINDOW_BUTTON = {
   click: (gd) => Plotly.relayout(gd, { dragmode: "select" }),
 };
 
+// Zoom extents: fit everything drawn. Plotly's reset (home) instead returns to
+// the view it first recorded, which on the deck plan may predate the DTM.
+const ZOOM_EXTENTS_BUTTON = {
+  name: "zoomExtents",
+  title: "Zoom extents",
+  icon: Plotly.Icons.autoscale,
+  click: (gd) => Plotly.relayout(gd, { "xaxis.autorange": true, "yaxis.autorange": true }),
+};
+
 // Shared across every Plotly chart so the view tools (zoom window, pan,
-// zoom in/out, reset, download) look and behave identically everywhere.
+// zoom in/out, zoom extents, reset, download) look and behave identically
+// everywhere.
 const PLOTLY_CONFIG = {
   responsive: true,
   displaylogo: false,
   displayModeBar: true,
   modeBarButtonsToRemove: ["zoom2d", "select2d", "lasso2d", "autoScale2d"],
-  modeBarButtonsToAdd: [ZOOM_WINDOW_BUTTON],
+  modeBarButtonsToAdd: [ZOOM_WINDOW_BUTTON, ZOOM_EXTENTS_BUTTON],
 };
 
 // Spread into every chart layout. Plotly draws with its own default font
