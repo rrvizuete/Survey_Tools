@@ -192,17 +192,31 @@
               <select id="alignmentSelect" class="form-select form-select-sm mb-2" disabled>
                 <option value="">(Upload an alignment)</option>
               </select>
-              <label for="sectionStationSelect" class="form-label">Station</label>
-              <div class="input-group input-group-sm mb-2">
-                <button id="sectionPrevBtn" class="btn btn-outline-secondary" type="button" aria-label="Previous station">&larr;</button>
-                <select id="sectionStationSelect" class="form-select" disabled>
-                  <option value="">(Upload an alignment)</option>
-                </select>
-                <button id="sectionNextBtn" class="btn btn-outline-secondary" type="button" aria-label="Next station">&rarr;</button>
-              </div>
-              <div class="input-group input-group-sm mb-2">
-                <input class="form-control" id="sectionStationInput" type="text" placeholder="Go to station, e.g. 12+34.50" aria-label="Go to station" />
-                <button id="sectionGoBtn" class="btn btn-outline-primary" type="button">Go</button>
+              <label for="sectionStationInput" class="form-label">Station</label>
+              <div class="input-group input-group-sm has-validation mb-2">
+                <button id="sectionPrevBtn" class="btn btn-outline-secondary" type="button" aria-label="Previous station" disabled>&larr;</button>
+                <input
+                  class="form-control"
+                  id="sectionStationInput"
+                  type="text"
+                  placeholder="(Upload an alignment)"
+                  autocomplete="off"
+                  title="Pick a station from the list, or type one (e.g. 12+34.50 or 1234.50) and press Enter."
+                  aria-describedby="sectionStationFeedback"
+                  disabled
+                />
+                <button
+                  id="sectionStationToggle"
+                  class="btn btn-outline-secondary dropdown-toggle"
+                  type="button"
+                  data-bs-toggle="dropdown"
+                  aria-expanded="false"
+                  aria-label="Station list"
+                  disabled
+                ></button>
+                <ul id="sectionStationMenu" class="dropdown-menu dropdown-menu-end station-menu"></ul>
+                <button id="sectionNextBtn" class="btn btn-outline-secondary" type="button" aria-label="Next station" disabled>&rarr;</button>
+                <div id="sectionStationFeedback" class="invalid-feedback"></div>
               </div>
               <div class="sidebar-pair">
                 <div>

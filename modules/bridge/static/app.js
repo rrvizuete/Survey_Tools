@@ -145,6 +145,8 @@ const state = {
   alignment: null,
   sectionStations: [],
   sectionStation: null,
+  // Station range the section box accepts: the bridge's, or the alignment's.
+  sectionRange: null,
   sectionRangeNote: "",
   section: null,
   // Bumped whenever the plotted data set changes, so the deck plan keeps the
@@ -183,8 +185,12 @@ const ui = {
   alignmentUploadStatus: document.getElementById("alignmentUploadStatus"),
   alignmentSelect: document.getElementById("alignmentSelect"),
   sectionIntervalInput: document.getElementById("sectionIntervalInput"),
-  sectionStationSelect: document.getElementById("sectionStationSelect"),
   sectionStationInput: document.getElementById("sectionStationInput"),
+  sectionStationToggle: document.getElementById("sectionStationToggle"),
+  sectionStationMenu: document.getElementById("sectionStationMenu"),
+  sectionStationFeedback: document.getElementById("sectionStationFeedback"),
+  sectionPrevBtn: document.getElementById("sectionPrevBtn"),
+  sectionNextBtn: document.getElementById("sectionNextBtn"),
   sectionStatus: document.getElementById("sectionStatus"),
   sectionChart: document.getElementById("sectionChart"),
   verticalExaggerationInput: document.getElementById("verticalExaggerationInput"),
@@ -1825,35 +1831,84 @@ function readSectionInterval() {
   return Number.isFinite(value) && value > 0 ? value : 10;
 }
 
-function populateSectionStationSelect() {
-  const select = ui.sectionStationSelect;
-  if (!state.sectionStations.length) {
-    select.innerHTML = '<option value="">(Upload an alignment)</option>';
-    select.disabled = true;
+function showStationWarning(message) {
+  ui.sectionStationInput.classList.toggle("is-invalid", Boolean(message));
+  ui.sectionStationFeedback.textContent = message;
+}
+
+/** Fills the station box and its dropdown list with the interval stations. */
+function populateSectionStationList() {
+  const input = ui.sectionStationInput;
+  const menu = ui.sectionStationMenu;
+  const hasStations = state.sectionStations.length > 0;
+  [input, ui.sectionStationToggle, ui.sectionPrevBtn, ui.sectionNextBtn].forEach((control) => {
+    control.disabled = !hasStations;
+  });
+  showStationWarning("");
+  menu.innerHTML = "";
+
+  if (!hasStations) {
+    input.value = "";
+    input.placeholder = "(Upload an alignment)";
     return;
   }
 
-  select.disabled = false;
-  select.innerHTML = "";
+  input.placeholder = "e.g. 12+34.50";
   state.sectionStations.forEach((station) => {
-    const option = document.createElement("option");
-    option.value = station.toFixed(4);
-    option.textContent = BridgeAlignment.formatStation(station);
-    select.appendChild(option);
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "dropdown-item";
+    item.dataset.station = String(station);
+    item.textContent = BridgeAlignment.formatStation(station);
+    if (Math.abs(station - (state.sectionStation ?? NaN)) < 1e-6) item.classList.add("active");
+    const row = document.createElement("li");
+    row.appendChild(item);
+    menu.appendChild(row);
   });
-  if (state.sectionStation !== null && state.sectionStation !== undefined) {
-    select.value = state.sectionStation.toFixed(4);
+  const current = state.sectionStation;
+  input.value = current === null || current === undefined ? "" : BridgeAlignment.formatStation(current);
+}
+
+/** Goes to the station typed in the station box, or warns and stays put. */
+function goToTypedStation() {
+  const text = ui.sectionStationInput.value.trim();
+  const range = state.sectionRange;
+  if (!state.alignment || !range) return;
+  if (!text) {
+    populateSectionStationList();
+    return;
   }
+
+  const station = BridgeAlignment.parseStation(text);
+  if (station === null) {
+    showStationWarning("Enter a station such as 12+34.50 or 1234.50.");
+    return;
+  }
+  // Enter and the change that follows it both land here; draw once.
+  if (Math.abs(station - (state.sectionStation ?? NaN)) < 1e-6) {
+    populateSectionStationList();
+    return;
+  }
+  if (station < range.min - 1e-6 || station > range.max + 1e-6) {
+    showStationWarning(
+      `Sta ${BridgeAlignment.formatStation(station)} is out of range: ${range.fromBridge ? "the bridge" : "the alignment"} ` +
+        `runs from ${BridgeAlignment.formatStation(range.min)} to ${BridgeAlignment.formatStation(range.max)}.`,
+    );
+    return;
+  }
+  showSectionAt(station);
 }
 
 function rebuildSectionStations() {
   const alignment = state.alignment;
   if (!alignment) {
     state.sectionStations = [];
+    state.sectionRange = null;
     return "";
   }
 
   const range = bridgeStationRange(alignment);
+  state.sectionRange = range;
   let interval = readSectionInterval();
   let note = "";
   if ((range.max - range.min) / interval > MAX_SECTION_STATIONS) {
@@ -1869,13 +1924,13 @@ function rebuildSectionStations() {
   }
   if (range.max - stations[stations.length - 1] > 1e-6) stations.push(range.max);
 
-  // Keep a station the user typed in, if it still falls on the alignment.
+  // Keep a station the user typed in, if it is still in range.
   const current = state.sectionStation;
   if (
     current !== null &&
     current !== undefined &&
-    current >= alignment.staStart &&
-    current <= alignment.staEnd &&
+    current >= range.min - 1e-6 &&
+    current <= range.max + 1e-6 &&
     !stations.some((station) => Math.abs(station - current) < 1e-6)
   ) {
     stations.push(current);
@@ -1903,7 +1958,7 @@ function rebuildSectionStations() {
 function refreshSections() {
   if (!ui.sectionChart) return;
   state.sectionRangeNote = rebuildSectionStations();
-  populateSectionStationSelect();
+  populateSectionStationList();
   renderSectionChart();
 }
 
@@ -1921,7 +1976,7 @@ function showSectionAt(station) {
     state.sectionStations.push(station);
     state.sectionStations.sort((a, b) => a - b);
   }
-  populateSectionStationSelect();
+  populateSectionStationList();
   renderSectionChart();
   renderDeflectedDeckChart();
 }
@@ -2702,33 +2757,28 @@ if (ui.alignmentFileInput) {
     renderDeflectedDeckChart();
   });
   ui.verticalExaggerationInput.addEventListener("change", renderSectionChart);
-  ui.sectionStationSelect.addEventListener("change", () => showSectionAt(Number(ui.sectionStationSelect.value)));
-  document.getElementById("sectionPrevBtn").addEventListener("click", () => stepSection(-1));
-  document.getElementById("sectionNextBtn").addEventListener("click", () => stepSection(1));
+  ui.sectionPrevBtn.addEventListener("click", () => stepSection(-1));
+  ui.sectionNextBtn.addEventListener("click", () => stepSection(1));
 
-  const goToStation = () => {
-    if (!state.alignment) {
-      window.alert("Please upload a civil alignment first.");
-      return;
-    }
-    const station = BridgeAlignment.parseStation(ui.sectionStationInput.value);
-    if (station === null) {
-      window.alert("Enter a station such as 12+34.50 or 1234.50.");
-      return;
-    }
-    if (station < state.alignment.staStart - 1e-6 || station > state.alignment.staEnd + 1e-6) {
-      window.alert(
-        `Station ${BridgeAlignment.formatStation(station)} is outside the alignment ` +
-          `(${BridgeAlignment.formatStation(state.alignment.staStart)} to ` +
-          `${BridgeAlignment.formatStation(state.alignment.staEnd)}).`,
-      );
-      return;
-    }
-    showSectionAt(station);
-  };
-  document.getElementById("sectionGoBtn").addEventListener("click", goToStation);
+  // The station box takes a typed station (Enter, or leaving the box) or a
+  // pick from its dropdown list of interval stations.
   ui.sectionStationInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") goToStation();
+    if (event.key === "Enter") {
+      event.preventDefault();
+      goToTypedStation();
+    } else if (event.key === "Escape") {
+      populateSectionStationList(); // back to the current station
+    }
+  });
+  ui.sectionStationInput.addEventListener("change", goToTypedStation);
+  ui.sectionStationInput.addEventListener("focus", () => ui.sectionStationInput.select());
+  ui.sectionStationMenu.addEventListener("click", (event) => {
+    const item = event.target.closest("[data-station]");
+    if (item) showSectionAt(Number(item.dataset.station));
+  });
+  // Open the list at the current station rather than at the top.
+  ui.sectionStationToggle.addEventListener("shown.bs.dropdown", () => {
+    ui.sectionStationMenu.querySelector(".active")?.scrollIntoView({ block: "center" });
   });
 }
 

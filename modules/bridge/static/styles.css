@@ -78,6 +78,18 @@
   font-size: 0.78rem;
 }
 
+/* Section station list: scrolls rather than running off the screen. */
+.station-menu {
+  max-height: 16rem;
+  overflow-y: auto;
+  font-size: 0.78rem;
+}
+
+.station-menu .dropdown-item {
+  padding: 0.2rem 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .workspace-sidebar .btn-link {
   font-size: 0.75rem;
   text-decoration: none;
