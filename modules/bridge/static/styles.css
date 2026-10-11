@@ -372,3 +372,112 @@
   float: none !important;
   background: rgba(255, 255, 255, 0.85) !important;
 }
+
+/* ---------- Deck thickness: one box per span ---------- */
+
+.span-thickness-list:not(:empty) {
+  display: grid;
+  gap: 0.3rem;
+  margin-top: 0.5rem;
+}
+
+.span-thickness-row {
+  display: grid;
+  grid-template-columns: 1fr 5.5rem;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* ---------- Girder report ---------- */
+
+.report-girder + .report-girder {
+  margin-top: 1.5rem;
+}
+
+.report-girder-title {
+  margin: 0 0 0.15rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.report-meta {
+  margin: 0 0 0.45rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.report-table-wrap {
+  border: 1px solid #d8dee5;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+}
+
+.report-table th,
+.report-table td {
+  font-size: 0.78rem;
+  white-space: nowrap;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.report-table th:nth-child(-n + 3),
+.report-table td:nth-child(-n + 3) {
+  text-align: left;
+}
+
+/* Same reset as the source grid: base.html styles bare <th> for Leveling. */
+.report-table th {
+  position: static;
+  background: #f1f4f8;
+  color: inherit;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: normal;
+  white-space: normal;
+  vertical-align: bottom;
+  line-height: 1.25;
+}
+
+.report-table .report-empty {
+  color: var(--muted);
+}
+
+/* Print / PDF of the girder report: only the report tables. */
+@media print {
+  .toolbox-bar,
+  .site-footer,
+  .btn-help,
+  .bridge-panel > header,
+  .app-tabs,
+  .workspace-sidebar {
+    display: none !important;
+  }
+
+  .page-wide .app-shell {
+    width: 100%;
+    padding: 0;
+  }
+
+  .bridge-panel {
+    box-shadow: none !important;
+    padding: 0 !important;
+    min-height: 0;
+  }
+
+  .workspace {
+    display: block;
+  }
+
+  .report-table-wrap {
+    overflow: visible;
+    border: 0;
+  }
+
+  .report-girder + .report-girder {
+    break-before: page;
+  }
+
+  .report-table thead {
+    display: table-header-group;
+  }
+}
