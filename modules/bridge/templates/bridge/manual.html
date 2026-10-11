@@ -595,6 +595,13 @@ s = 0                                                                           
               <td>A span has a single girder; deflection is treated as zero across it.</td></tr>
             <tr><td>Overhang WARNING: the DTM does not cover this exterior girder</td>
               <td>The edge of deck could not be found, so the offset is measured from the girder centerline instead.</td></tr>
+            <tr><td>WARNING: &hellip; produce the same point names</td>
+              <td>Two girders get identical point names, so their points cannot be told apart in the exports &ndash;
+                e.g. spans <code>1</code> and <code>01</code> (both padded to <code>01</code>), or span <code>A1</code>
+                girder <code>2</code> and span <code>A</code> girder <code>102</code>. Rename one of them in the girder
+                data sheet.</td></tr>
+            <tr><td>WARNING: Span &hellip;, Girder &hellip; is on both row &hellip; and row &hellip;</td>
+              <td>The same girder is listed twice. Remove the duplicate row.</td></tr>
             <tr><td>Bottom of deck deflected or haunch is blank</td>
               <td>No deck thickness is set for that span. Enter it under <span class="ui">Deck thickness</span> on the
                 Deflected Deck tab (all spans, or the span's own box).</td></tr>

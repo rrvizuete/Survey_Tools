@@ -3006,6 +3006,11 @@ function runCalculation() {
   state.planRevision += 1;
 
   const output = [["N", "E", "Elevation (ft)", "Description", "Deflection (ft)", "Camber (ft)"]];
+  // Point name -> the sheet row that produced it, to catch two girders whose
+  // names collide (e.g. spans "1" and "01", or span "A1" girder "2" and span
+  // "A" girder "102").
+  const nameOwners = new Map();
+  const collisions = new Map();
 
   const total = state.sourceRows.length;
   for (let rowIndex = 0; rowIndex < total; rowIndex += 1) {
@@ -3015,6 +3020,15 @@ function runCalculation() {
     try {
       const result = buildGirderPoints(row, intervals);
       output.push(...result.rows);
+      const owner = { row: rowIndex + 2, span: result.spanDisplay, girder: result.girderDisplay };
+      result.rows.forEach((pointRow) => {
+        const name = pointRow[3];
+        const first = nameOwners.get(name);
+        if (!first) nameOwners.set(name, owner);
+        else if (!collisions.has(`${first.row}|${owner.row}`)) {
+          collisions.set(`${first.row}|${owner.row}`, { first, second: owner, name });
+        }
+      });
 
       const profileKey = `${result.spanDisplay}||${result.girderDisplay}`;
       state.profiles[profileKey] = result.graphPoints;
@@ -3025,6 +3039,9 @@ function runCalculation() {
         support2E: result.support2E,
         planCenterline: result.planCenterline,
         planEdges: result.planEdges,
+        // This girder's Top of girder rows, so the report reads its own
+        // elevations even when another girder's point names collide with them.
+        topOfGirderRows: result.rows,
       };
 
       if (!state.spanToGirders[result.spanDisplay]) {
@@ -3042,6 +3059,19 @@ function runCalculation() {
     const pct = Math.round(((rowIndex + 1) / total) * 100);
     setProgress(pct, `Processed row ${rowIndex + 1} of ${total}`);
   }
+
+  collisions.forEach(({ first, second, name }) => {
+    const same = first.span === second.span && first.girder === second.girder;
+    state.logs.push(
+      same
+        ? `WARNING: Span ${first.span}, Girder ${first.girder} is on both row ${first.row} and row ${second.row}. ` +
+            "Both are in the Top of girder export with the same point names (e.g. " +
+            `${name}); the graphs, deck and report use row ${second.row}. Remove the duplicate row.`
+        : `WARNING: Span ${first.span}, Girder ${first.girder} (row ${first.row}) and Span ${second.span}, ` +
+            `Girder ${second.girder} (row ${second.row}) produce the same point names (e.g. ${name}), so their ` +
+            "points cannot be told apart in the exports. Rename one of them.",
+    );
+  });
 
   state.topOfGirderPoints = output;
   ui.logOutput.textContent = state.logs.join("\n");
@@ -3317,8 +3347,9 @@ function reportGirders() {
  * applied to the deck at that point once the deck is computed (so top of deck
  * + deflection = top of deck deflected), and the girder's own before that.
  */
-function buildGirderReport(span, girder, topOfGirderByCode) {
+function buildGirderReport(span, girder) {
   const key = `${span}||${girder}`;
+  const topOfGirderByCode = new Map((state.girderGeometry[key]?.topOfGirderRows ?? []).map((row) => [row[3], row]));
   const profile = state.profiles[key] ?? [];
   const deck = state.deflectedDeck;
   const deckByCode = new Map((deck?.girderPoints?.[key] ?? []).map((point) => [point.code, point]));
@@ -3390,8 +3421,7 @@ function buildGirderReport(span, girder, topOfGirderByCode) {
 }
 
 function buildGirderReports() {
-  const topOfGirderByCode = new Map(state.topOfGirderPoints.slice(1).map((row) => [row[3], row]));
-  return reportGirders().map(({ span, girder }) => buildGirderReport(span, girder, topOfGirderByCode));
+  return reportGirders().map(({ span, girder }) => buildGirderReport(span, girder));
 }
 
 function describeThickness(thickness) {
