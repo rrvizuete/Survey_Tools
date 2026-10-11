@@ -70,6 +70,14 @@ const ZOOM_EXTENTS_BUTTON = {
   click: (gd) => Plotly.relayout(gd, { "xaxis.autorange": true, "yaxis.autorange": true }),
 };
 
+// Download as PDF: the chart's current view on one landscape Letter page.
+const PDF_DOWNLOAD_BUTTON = {
+  name: "downloadPdf",
+  title: "Download plot as PDF",
+  icon: { width: 24, height: 24, path: "M5 2H14L19 7V22H5Z M7 4V20H17V8H13V4Z" },
+  click: (gd) => downloadChartPdf(gd),
+};
+
 // Shared across every Plotly chart so the view tools (zoom window, pan,
 // zoom in/out, zoom extents, reset, download) look and behave identically
 // everywhere.
@@ -80,7 +88,7 @@ const PLOTLY_CONFIG = {
   // Mouse wheel zooms in and out about the cursor.
   scrollZoom: true,
   modeBarButtonsToRemove: ["zoom2d", "select2d", "lasso2d", "autoScale2d"],
-  modeBarButtonsToAdd: [ZOOM_WINDOW_BUTTON, ZOOM_EXTENTS_BUTTON],
+  modeBarButtonsToAdd: [ZOOM_WINDOW_BUTTON, ZOOM_EXTENTS_BUTTON, PDF_DOWNLOAD_BUTTON],
 };
 
 // Spread into every chart layout. Plotly draws with its own default font
@@ -412,6 +420,96 @@ function triggerDownload(url, filename) {
   a.click();
   document.body.removeChild(a);
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// Render scale for the PDF image: 3x the on-screen size keeps lines and text
+// sharp when the page is printed or zoomed.
+const PDF_IMAGE_SCALE = 3;
+
+/**
+ * Saves a chart, as currently zoomed, to a one-page PDF named after its title.
+ * Plotly only renders raster or SVG images, so the chart is rendered as a JPEG
+ * and wrapped in a minimal PDF (JPEG is a native PDF image filter).
+ */
+async function downloadChartPdf(gd) {
+  const width = gd._fullLayout?.width;
+  const height = gd._fullLayout?.height;
+  if (!width || !height) return;
+  try {
+    const dataUrl = await Plotly.toImage(gd, { format: "jpeg", width, height, scale: PDF_IMAGE_SCALE });
+    const binary = atob(dataUrl.slice(dataUrl.indexOf(",") + 1));
+    const jpeg = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    const pdf = jpegToPdf(jpeg, width * PDF_IMAGE_SCALE, height * PDF_IMAGE_SCALE);
+    const filename = `${chartFileName(gd)}.pdf`;
+    triggerDownload(URL.createObjectURL(pdf), filename);
+    logLine(`Export: wrote the plot to "${filename}".`);
+  } catch (error) {
+    window.alert(`Could not export the plot as PDF: ${error.message}`);
+  }
+}
+
+/** The chart's title as plain text, safe for a file name. */
+function chartFileName(gd) {
+  const title = gd.layout?.title;
+  const text = (typeof title === "string" ? title : title?.text) || "Plot";
+  const name = text
+    .replace(/<[^>]*>/g, "")
+    .replace(/[\\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+  return name || "Plot";
+}
+
+/**
+ * A one-page PDF (US Letter, landscape) with the JPEG centred inside half-inch
+ * margins, keeping its proportions. imageWidth/imageHeight are its pixel size.
+ */
+function jpegToPdf(jpeg, imageWidth, imageHeight) {
+  const pageWidth = 792;
+  const pageHeight = 612;
+  const margin = 36;
+  const fit = Math.min((pageWidth - 2 * margin) / imageWidth, (pageHeight - 2 * margin) / imageHeight);
+  const w = imageWidth * fit;
+  const h = imageHeight * fit;
+  const x = (pageWidth - w) / 2;
+  const y = (pageHeight - h) / 2;
+  const content = `q ${w.toFixed(2)} 0 0 ${h.toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)} cm /Im0 Do Q`;
+
+  const objects = [
+    ["<< /Type /Catalog /Pages 2 0 R >>"],
+    ["<< /Type /Pages /Kids [3 0 R] /Count 1 >>"],
+    [
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] ` +
+        "/Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>",
+    ],
+    [
+      `<< /Type /XObject /Subtype /Image /Width ${imageWidth} /Height ${imageHeight} /ColorSpace /DeviceRGB ` +
+        `/BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`,
+      jpeg,
+      "\nendstream",
+    ],
+    [`<< /Length ${content.length} >>\nstream\n${content}\nendstream`],
+  ];
+
+  // Every string here is ASCII, so its length is its byte count.
+  const parts = ["%PDF-1.4\n"];
+  let size = parts[0].length;
+  const offsets = [];
+  const push = (part) => {
+    parts.push(part);
+    size += part.length;
+  };
+  objects.forEach((body, index) => {
+    offsets.push(size);
+    push(`${index + 1} 0 obj\n`);
+    body.forEach(push);
+    push("\nendobj\n");
+  });
+  const xref = size;
+  push(`xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`);
+  offsets.forEach((offset) => push(`${String(offset).padStart(10, "0")} 00000 n \n`));
+  push(`trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+  return new Blob(parts, { type: "application/pdf" });
 }
 
 function downloadTemplate() {
