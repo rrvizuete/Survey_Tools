@@ -523,9 +523,14 @@
         `date="${date}" time="${time}" version="1.2" language="English" readOnly="false">`,
       `\t${units}`,
       '\t<Application name="Survey Toolbox" desc="Bridge Superstructure - deflected top of deck" manufacturer="Survey Toolbox"></Application>',
-      "\t<Surfaces>",
-      `\t\t<Surface name="${name}" desc="${desc}">`,
     ];
+    // The project (name required by the schema) and the bridge as its description.
+    if (options.project || options.bridge) {
+      const projectName = escapeXml(options.project || options.bridge);
+      const projectDesc = escapeXml(options.bridge ? `Bridge: ${options.bridge}` : "");
+      lines.push(`\t<Project name="${projectName}" desc="${projectDesc}"></Project>`);
+    }
+    lines.push("\t<Surfaces>", `\t\t<Surface name="${name}" desc="${desc}">`);
     // Break lines (e.g. the edge of deck) as 3D polylines on the TIN's own
     // vertices, so a program that rebuilds the TIN keeps the grade break.
     const breaklines = surface.breaklines ?? [];

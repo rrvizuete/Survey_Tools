@@ -198,6 +198,30 @@
   font-size: 0.95rem;
 }
 
+/* Project and bridge names, above the tabs so they show on every tab. */
+.project-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem 1rem;
+}
+
+.project-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 1 20rem;
+}
+
+.project-field .form-label {
+  margin: 0;
+  color: #5a6b7d;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .app-tabs .nav-link {
   font-weight: 600;
   font-size: 0.95rem;
@@ -394,6 +418,13 @@
   margin-top: 1.5rem;
 }
 
+.report-project {
+  margin: 0 0 0.1rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
 .report-girder-title {
   margin: 0 0 0.15rem;
   font-size: 1.05rem;
@@ -448,6 +479,7 @@
   .site-footer,
   .btn-help,
   .bridge-panel > header,
+  .project-bar,
   .app-tabs,
   .workspace-sidebar {
     display: none !important;

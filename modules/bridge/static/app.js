@@ -70,6 +70,15 @@ const ZOOM_EXTENTS_BUTTON = {
   click: (gd) => Plotly.relayout(gd, { "xaxis.autorange": true, "yaxis.autorange": true }),
 };
 
+// Download as PNG: Plotly's own camera button, but with the project and
+// bridge names leading the file name.
+const PNG_DOWNLOAD_BUTTON = {
+  name: "downloadPng",
+  title: "Download plot as PNG",
+  icon: Plotly.Icons.camera,
+  click: (gd) => Plotly.downloadImage(gd, { format: "png", filename: exportFileName(chartFileName(gd)) }),
+};
+
 // Download as PDF: the chart's current view on one landscape Letter page.
 const PDF_DOWNLOAD_BUTTON = {
   name: "downloadPdf",
@@ -87,8 +96,8 @@ const PLOTLY_CONFIG = {
   displayModeBar: true,
   // Mouse wheel zooms in and out about the cursor.
   scrollZoom: true,
-  modeBarButtonsToRemove: ["zoom2d", "select2d", "lasso2d", "autoScale2d"],
-  modeBarButtonsToAdd: [ZOOM_WINDOW_BUTTON, ZOOM_EXTENTS_BUTTON, PDF_DOWNLOAD_BUTTON],
+  modeBarButtonsToRemove: ["zoom2d", "select2d", "lasso2d", "autoScale2d", "toImage"],
+  modeBarButtonsToAdd: [ZOOM_WINDOW_BUTTON, ZOOM_EXTENTS_BUTTON, PNG_DOWNLOAD_BUTTON, PDF_DOWNLOAD_BUTTON],
 };
 
 // Spread into every chart layout. Plotly draws with its own default font
@@ -217,6 +226,8 @@ const state = {
 };
 
 const ui = {
+  projectNameInput: document.getElementById("projectNameInput"),
+  bridgeNameInput: document.getElementById("bridgeNameInput"),
   tabDataBtn: document.getElementById("tabDataBtn"),
   tabGraphsBtn: document.getElementById("tabGraphsBtn"),
   tabExportBtn: document.getElementById("tabExportBtn"),
@@ -412,6 +423,47 @@ function activateTab(tab) {
   if (tab === "report") renderGirderReport();
 }
 
+/** The project and bridge names typed above the tabs ("" when blank). */
+function projectInfo() {
+  return { project: ui.projectNameInput.value.trim(), bridge: ui.bridgeNameInput.value.trim() };
+}
+
+/** "Project: X · Bridge: Y" (either part left out when blank), or "". */
+function projectLabel() {
+  const { project, bridge } = projectInfo();
+  return [project && `Project: ${project}`, bridge && `Bridge: ${bridge}`].filter(Boolean).join(" · ");
+}
+
+/** The Project and Bridge rows that head the Excel exports. */
+function projectRows() {
+  const { project, bridge } = projectInfo();
+  return [
+    ["Project", project],
+    ["Bridge", bridge],
+  ];
+}
+
+/** Text with the characters Windows forbids in file names replaced. */
+function safeFileName(text) {
+  return text.replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").trim();
+}
+
+/** A download's file name led by the project and bridge, e.g. "I-95 - Bridge 12 - Log.txt". */
+function exportFileName(name) {
+  const { project, bridge } = projectInfo();
+  return safeFileName([project, bridge, name].filter(Boolean).join(" - "));
+}
+
+// The page title without the names; the names are added in front of it so
+// they also lead the default file name when the girder report is printed to PDF.
+const BASE_DOCUMENT_TITLE = document.title;
+
+function onProjectNameChange() {
+  const { project, bridge } = projectInfo();
+  document.title = [project, bridge, BASE_DOCUMENT_TITLE].filter(Boolean).join(" - ");
+  renderGirderReport();
+}
+
 function triggerDownload(url, filename) {
   const a = document.createElement("a");
   a.href = url;
@@ -427,9 +479,10 @@ function triggerDownload(url, filename) {
 const PDF_IMAGE_SCALE = 3;
 
 /**
- * Saves a chart, as currently zoomed, to a one-page PDF named after its title.
- * Plotly only renders raster or SVG images, so the chart is rendered as a JPEG
- * and wrapped in a minimal PDF (JPEG is a native PDF image filter).
+ * Saves a chart, as currently zoomed, to a one-page PDF named after its title,
+ * headed by the project and bridge names. Plotly only renders raster or SVG
+ * images, so the chart is rendered as a JPEG and wrapped in a minimal PDF
+ * (JPEG is a native PDF image filter).
  */
 async function downloadChartPdf(gd) {
   const width = gd._fullLayout?.width;
@@ -439,8 +492,8 @@ async function downloadChartPdf(gd) {
     const dataUrl = await Plotly.toImage(gd, { format: "jpeg", width, height, scale: PDF_IMAGE_SCALE });
     const binary = atob(dataUrl.slice(dataUrl.indexOf(",") + 1));
     const jpeg = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-    const pdf = jpegToPdf(jpeg, width * PDF_IMAGE_SCALE, height * PDF_IMAGE_SCALE);
-    const filename = `${chartFileName(gd)}.pdf`;
+    const pdf = jpegToPdf(jpeg, width * PDF_IMAGE_SCALE, height * PDF_IMAGE_SCALE, projectLabel());
+    const filename = exportFileName(`${chartFileName(gd)}.pdf`);
     triggerDownload(URL.createObjectURL(pdf), filename);
     logLine(`Export: wrote the plot to "${filename}".`);
   } catch (error) {
@@ -452,35 +505,58 @@ async function downloadChartPdf(gd) {
 function chartFileName(gd) {
   const title = gd.layout?.title;
   const text = (typeof title === "string" ? title : title?.text) || "Plot";
-  const name = text
-    .replace(/<[^>]*>/g, "")
-    .replace(/[\\/:*?"<>|]+/g, "-")
-    .replace(/\s+/g, " ")
-    .trim();
-  return name || "Plot";
+  return safeFileName(text.replace(/<[^>]*>/g, "")) || "Plot";
+}
+
+// Characters outside Latin-1 that Helvetica's WinAnsi encoding still has.
+const WIN_ANSI_EXTRAS = { "–": 0x96, "—": 0x97, "‘": 0x91, "’": 0x92, "“": 0x93, "”": 0x94, "•": 0x95 };
+
+/**
+ * Text as a PDF string literal in WinAnsi encoding. Bytes above ASCII are
+ * written as octal escapes so the PDF stays plain ASCII; characters the
+ * encoding lacks become "?".
+ */
+function pdfString(text) {
+  let out = "";
+  for (const char of text) {
+    const code = WIN_ANSI_EXTRAS[char] ?? char.codePointAt(0);
+    if (char === "(" || char === ")" || char === "\\") out += `\\${char}`;
+    else if (code >= 32 && code < 127) out += char;
+    else if (code >= 128 && code <= 255) out += `\\${code.toString(8)}`;
+    else out += "?";
+  }
+  return `(${out})`;
 }
 
 /**
  * A one-page PDF (US Letter, landscape) with the JPEG centred inside half-inch
- * margins, keeping its proportions. imageWidth/imageHeight are its pixel size.
+ * margins, keeping its proportions, under an optional one-line header.
+ * imageWidth/imageHeight are its pixel size.
  */
-function jpegToPdf(jpeg, imageWidth, imageHeight) {
+function jpegToPdf(jpeg, imageWidth, imageHeight, header = "") {
   const pageWidth = 792;
   const pageHeight = 612;
   const margin = 36;
-  const fit = Math.min((pageWidth - 2 * margin) / imageWidth, (pageHeight - 2 * margin) / imageHeight);
+  const fontSize = 10;
+  // The header line plus a gap before the image.
+  const headerSpace = header ? fontSize + 10 : 0;
+  const areaHeight = pageHeight - 2 * margin - headerSpace;
+  const fit = Math.min((pageWidth - 2 * margin) / imageWidth, areaHeight / imageHeight);
   const w = imageWidth * fit;
   const h = imageHeight * fit;
   const x = (pageWidth - w) / 2;
-  const y = (pageHeight - h) / 2;
-  const content = `q ${w.toFixed(2)} 0 0 ${h.toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)} cm /Im0 Do Q`;
+  const y = margin + (areaHeight - h) / 2;
+  let content = `q ${w.toFixed(2)} 0 0 ${h.toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)} cm /Im0 Do Q`;
+  if (header) {
+    content += `\nBT /F1 ${fontSize} Tf ${margin} ${pageHeight - margin - fontSize} Td ${pdfString(header)} Tj ET`;
+  }
 
   const objects = [
     ["<< /Type /Catalog /Pages 2 0 R >>"],
     ["<< /Type /Pages /Kids [3 0 R] /Count 1 >>"],
     [
       `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] ` +
-        "/Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>",
+        "/Resources << /XObject << /Im0 4 0 R >> /Font << /F1 6 0 R >> >> /Contents 5 0 R >>",
     ],
     [
       `<< /Type /XObject /Subtype /Image /Width ${imageWidth} /Height ${imageHeight} /ColorSpace /DeviceRGB ` +
@@ -489,6 +565,7 @@ function jpegToPdf(jpeg, imageWidth, imageHeight) {
       "\nendstream",
     ],
     [`<< /Length ${content.length} >>\nstream\n${content}\nendstream`],
+    ["<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"],
   ];
 
   // Every string here is ASCII, so its length is its byte count.
@@ -721,10 +798,22 @@ function buildGirderPoints(row, intervals) {
   };
 }
 
-function exportRowsAsWorkbook(rows, name) {
+/** A new workbook carrying the project and bridge in its document properties. */
+function projectWorkbook() {
   const workbook = XLSX.utils.book_new();
-  const sheet = XLSX.utils.aoa_to_sheet(rows);
-  XLSX.utils.book_append_sheet(workbook, sheet, "Results");
+  const { project, bridge } = projectInfo();
+  workbook.Props = { Title: [project, bridge].filter(Boolean).join(" - "), Subject: projectLabel() };
+  return workbook;
+}
+
+/**
+ * Point rows on a "Results" sheet. The project and bridge go on a sheet of
+ * their own after it, so the points still import as plain N, E, Z, D rows.
+ */
+function exportRowsAsWorkbook(rows, name) {
+  const workbook = projectWorkbook();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), "Results");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(projectRows()), "Project");
   const output = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
   const url = URL.createObjectURL(new Blob([output], { type: "application/octet-stream" }));
   triggerDownload(url, name);
@@ -3186,8 +3275,9 @@ function exportTopOfGirderPoints() {
     return;
   }
 
-  exportRowsAsWorkbook(state.topOfGirderPoints, "Top of girder.xlsx");
-  logLine(`Export: wrote ${state.topOfGirderPoints.length - 1} top-of-girder points to "Top of girder.xlsx".`);
+  const filename = exportFileName("Top of girder.xlsx");
+  exportRowsAsWorkbook(state.topOfGirderPoints, filename);
+  logLine(`Export: wrote ${state.topOfGirderPoints.length - 1} top-of-girder points to "${filename}".`);
 }
 
 function exportTopOfDeckDeflected() {
@@ -3272,11 +3362,12 @@ function exportTopOfDeckDeflected() {
       return;
     }
 
-    exportRowsAsWorkbook(rows, "ToD Deflected.xlsx");
+    const filename = exportFileName("ToD Deflected.xlsx");
+    exportRowsAsWorkbook(rows, filename);
     logLine(
       `Export: wrote ${rows.length - 1 - screedRows} deflected deck points at girder intervals` +
         (screedRows ? ` and ${screedRows} overhang (screed) points` : "") +
-        ' to "ToD Deflected.xlsx".',
+        ` to "${filename}".`,
     );
     if (unsetSpans.length) {
       logLine(
@@ -3293,7 +3384,7 @@ function exportTopOfDeckDeflected() {
     projectedRows.push([n, e, elevation, desc]);
   }
 
-  exportRowsAsWorkbook(projectedRows, "ToD Deflected.xlsx");
+  exportRowsAsWorkbook(projectedRows, exportFileName("ToD Deflected.xlsx"));
   logLine(
     "Projection note: No DTM XML provided. Export used computed top-of-girder elevations only (no deck surface applied).",
   );
@@ -3340,12 +3431,18 @@ function exportDeflectedSurfaceXml() {
       ? "Top of deck plus girder deflection"
       : `Top of deck plus girder deflection, extended ${overhangOffset} ft beyond the edge of deck, ` +
         `${describeOverhangSlope(overhangSlope)}; the edge of deck is a break line`;
-  const xml = BridgeSurfaceExport.toLandXml(surface, { name, description, unitsXml: state.dtmUnitsXml });
+  const xml = BridgeSurfaceExport.toLandXml(surface, {
+    name,
+    description,
+    unitsXml: state.dtmUnitsXml,
+    ...projectInfo(),
+  });
 
+  const filename = exportFileName("ToD Deflected Surface.xml");
   const url = URL.createObjectURL(new Blob([xml], { type: "application/xml" }));
-  triggerDownload(url, "ToD Deflected Surface.xml");
+  triggerDownload(url, filename);
   logLine(
-    `Export: wrote surface "${name}" to "ToD Deflected Surface.xml" - ${surface.vertices.length} points, ` +
+    `Export: wrote surface "${name}" to "${filename}" - ${surface.vertices.length} points, ` +
       `${surface.faces.length} faces (deck densified on a ${SURFACE_CELL_SIZE} ft grid` +
       (surface.stripFaces ? `, plus ${surface.stripFaces} faces out to the overhang edge).` : ")."),
   );
@@ -3529,10 +3626,15 @@ function renderGirderReport() {
     return `<td>${escapeHtml(column.digits === undefined ? value : value.toFixed(column.digits))}</td>`;
   };
 
+  // On every girder, since each prints on a page of its own.
+  const label = projectLabel();
+  const projectLine = label ? `<p class="report-project">${escapeHtml(label)}</p>` : "";
+
   ui.reportBody.innerHTML = reports
     .map(
       (report) => `
       <section class="report-girder">
+        ${projectLine}
         <h3 class="report-girder-title">Span ${escapeHtml(report.span)} &mdash; Girder ${escapeHtml(report.girder)}</h3>
         <p class="report-meta">
           Length ${report.length.toFixed(2)} ft &middot; ${report.intervals} intervals &middot;
@@ -3574,11 +3676,12 @@ function exportGirderReport() {
     return;
   }
 
-  const workbook = XLSX.utils.book_new();
+  const workbook = projectWorkbook();
   const used = new Set();
   reports.forEach((report) => {
     const thickness = report.thickness ? report.thickness.inches : "Not set";
     const rows = [
+      ...projectRows(),
       ["Span", report.span],
       ["Girder", report.girder],
       ["Length (ft)", report.length],
@@ -3592,12 +3695,13 @@ function exportGirderReport() {
   });
   const output = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
   const url = URL.createObjectURL(new Blob([output], { type: "application/octet-stream" }));
-  triggerDownload(url, "Girder report.xlsx");
+  const filename = exportFileName("Girder report.xlsx");
+  triggerDownload(url, filename);
 
   const notes = reportNotes(reports);
   logLine(
     `Export: wrote the girder report for ${reports.length} girder${reports.length === 1 ? "" : "s"} ` +
-      `(one sheet each) to "Girder report.xlsx".` +
+      `(one sheet each) to "${filename}".` +
       (notes ? ` ${notes}` : ""),
   );
 }
@@ -3612,9 +3716,11 @@ function printGirderReport() {
 }
 
 function downloadLog() {
-  const blob = new Blob([ui.logOutput.textContent || "No log entries yet."], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  triggerDownload(url, "Log.txt");
+  const { project, bridge } = projectInfo();
+  const header = [project && `Project: ${project}`, bridge && `Bridge: ${bridge}`].filter(Boolean);
+  const text = [...header, ...(header.length ? [""] : []), ui.logOutput.textContent || "No log entries yet."].join("\n");
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+  triggerDownload(url, exportFileName("Log.txt"));
 }
 
 renderSourceGrid();
@@ -3623,6 +3729,9 @@ ui.tabDataBtn.addEventListener("click", () => activateTab("data"));
 ui.tabGraphsBtn.addEventListener("click", () => activateTab("graphs"));
 ui.tabExportBtn.addEventListener("click", () => activateTab("export"));
 ui.tabReportBtn.addEventListener("click", () => activateTab("report"));
+
+ui.projectNameInput.addEventListener("input", onProjectNameChange);
+ui.bridgeNameInput.addEventListener("input", onProjectNameChange);
 
 document.getElementById("downloadTemplateBtn").addEventListener("click", downloadTemplate);
 document.getElementById("calculateBtn").addEventListener("click", runCalculation);

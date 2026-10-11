@@ -64,6 +64,11 @@
         <li><strong>Export</strong><span>Download points and the girder report (Excel) and the deflected surface (LandXML).</span></li>
       </ol>
       <p>All work happens in your browser; files are not uploaded to a server.</p>
+      <h3>Project and bridge</h3>
+      <p>Type the <span class="ui">Project</span> and <span class="ui">Bridge</span> names in the boxes above the tabs.
+        They stay on screen on every tab and head each girder in the girder report (on screen and printed). Every export
+        names them: the file name starts with them (e.g. <code>I-95 Widening - Bridge 12 - Top of girder.xlsx</code>),
+        and the file records them too (see <a href="#exports">Exports</a>). Either box can be left blank.</p>
     </section>
 
     <!-- 2 -->
@@ -158,9 +163,10 @@
           out about the cursor, and pressing the wheel and dragging pans, whatever tool is active.</li>
         <li><strong>Zoom extents</strong> (four arrows) fits everything drawn in the chart. <strong>Reset axes</strong> (home)
           returns to the chart's first view.</li>
-        <li><strong>Download</strong> (camera) saves the chart as an image.</li>
+        <li><strong>Download plot as PNG</strong> (camera) saves the chart as an image.</li>
         <li><strong>Download plot as PDF</strong> (page) saves the chart, as currently zoomed, to a one-page PDF
-          (Letter, landscape) named after the chart title.</li>
+          (Letter, landscape) headed by the project and bridge names.</li>
+        <li>Both are named after the chart title, led by the project and bridge names.</li>
       </ul>
       <p>The plan views keep true proportions and draw a square grid, the same spacing north and east, which refines
         (for example from 100 ft to 20 ft) as you zoom in.</p>
@@ -425,7 +431,8 @@
           </tbody>
         </table>
       </div>
-      <p>Each Excel sheet starts with the span, girder, girder length and deck thickness, followed by the table.</p>
+      <p>Each Excel sheet starts with the project, bridge, span, girder, girder length and deck thickness, followed by
+        the table.</p>
     </section>
 
     <!-- 9 -->
@@ -471,6 +478,13 @@
           </tbody>
         </table>
       </div>
+      <p>
+        Each file name starts with the project and bridge names, when set, e.g.
+        <code>I-95 Widening - Bridge 12 - Top of girder.xlsx</code>. Inside the files: the point workbooks keep the
+        points alone on their <em>Results</em> sheet (so they import as before) and add a <em>Project</em> sheet; the
+        girder report has them at the top of every sheet; the surface XML has a LandXML <code>Project</code> element; the
+        log file and chart PDFs start with them.
+      </p>
 
       <h3>Point names</h3>
       <div class="code-anatomy" aria-label="Point name A0100L">
