@@ -203,15 +203,20 @@ const state = {
   // Bumped whenever the plotted data set changes, so the deck plan keeps the
   // user's zoom while only the section line moves.
   planRevision: 0,
+  // Deck slab thickness (in): one value for every span, and per-span values
+  // that replace it. null means not set.
+  deckThickness: { all: null, bySpan: {} },
 };
 
 const ui = {
   tabDataBtn: document.getElementById("tabDataBtn"),
   tabGraphsBtn: document.getElementById("tabGraphsBtn"),
   tabExportBtn: document.getElementById("tabExportBtn"),
+  tabReportBtn: document.getElementById("tabReportBtn"),
   panelData: document.getElementById("panelData"),
   panelGraphs: document.getElementById("panelGraphs"),
   panelExport: document.getElementById("panelExport"),
+  panelReport: document.getElementById("panelReport"),
   sourceTableHead: document.getElementById("sourceTableHead"),
   sourceTableBody: document.getElementById("sourceTableBody"),
   fileInput: document.getElementById("fileInput"),
@@ -249,6 +254,13 @@ const ui = {
   sectionStatus: document.getElementById("sectionStatus"),
   sectionChart: document.getElementById("sectionChart"),
   verticalExaggerationInput: document.getElementById("verticalExaggerationInput"),
+  deckThicknessInput: document.getElementById("deckThicknessInput"),
+  spanThicknessList: document.getElementById("spanThicknessList"),
+  deckThicknessStatus: document.getElementById("deckThicknessStatus"),
+  reportSpanSelect: document.getElementById("reportSpanSelect"),
+  reportGirderSelect: document.getElementById("reportGirderSelect"),
+  reportStatus: document.getElementById("reportStatus"),
+  reportBody: document.getElementById("reportBody"),
 };
 
 function setProgress(percent, text) {
@@ -372,10 +384,12 @@ function activateTab(tab) {
   ui.panelData.classList.toggle("d-none", !isData);
   ui.panelGraphs.classList.toggle("d-none", !isGraphs);
   ui.panelExport.classList.toggle("d-none", tab !== "export");
+  ui.panelReport.classList.toggle("d-none", tab !== "report");
 
   ui.tabDataBtn.classList.toggle("active", isData);
   ui.tabGraphsBtn.classList.toggle("active", isGraphs);
   ui.tabExportBtn.classList.toggle("active", tab === "export");
+  ui.tabReportBtn.classList.toggle("active", tab === "report");
 
   if (isGraphs) {
     renderProfileChart();
@@ -386,6 +400,8 @@ function activateTab(tab) {
     refreshSections();
     renderDeflectedDeckChart();
   }
+
+  if (tab === "report") renderGirderReport();
 }
 
 function triggerDownload(url, filename) {
@@ -677,6 +693,7 @@ function populateSpanGirderPair(spanSelect, girderSelect) {
 function populateGraphSelectors() {
   populateSpanGirderPair(ui.graphSpanSelect, ui.graphGirderSelect);
   populateSpanGirderPair(ui.deckSpanSelect, ui.deckGirderSelect);
+  populateReportSelectors();
 }
 
 function renderProfileChart() {
@@ -949,6 +966,112 @@ function describeOverhangSlope(overhangSlope) {
 /** Short chart label for the computed deck's extension past the DTM. */
 function extensionLabel() {
   return state.deflectedDeck?.overhangSlope === "level" ? "held level" : "carried at cross slope";
+}
+
+/** A thickness box's value in inches: null when blank, NaN when not a valid thickness. */
+function parseThickness(raw) {
+  const text = String(raw ?? "").trim();
+  if (!text) return null;
+  const value = Number(text);
+  return Number.isFinite(value) && value >= 0 ? value : Number.NaN;
+}
+
+/**
+ * Deck thickness (in) for a span and where it came from: the span's own
+ * value, else the all-spans value, else null.
+ */
+function deckThicknessFor(span) {
+  const own = state.deckThickness.bySpan[span];
+  if (own !== null && own !== undefined) return { inches: own, source: "span" };
+  if (state.deckThickness.all !== null) return { inches: state.deckThickness.all, source: "all" };
+  return null;
+}
+
+/** Bottom of deck deflected (ft), measured vertically, or null without a thickness. */
+function bottomOfDeck(deflectedZ, span) {
+  const thickness = deckThicknessFor(span);
+  if (!thickness || !Number.isFinite(deflectedZ)) return null;
+  return deflectedZ - thickness.inches / 12;
+}
+
+/** One thickness box per span, under the all-spans value. Blank uses the all-spans value. */
+function renderSpanThicknessList() {
+  if (!ui.spanThicknessList) return;
+  const spans = sortedSpans();
+  // Keep the values of spans that still exist after a recalculation.
+  const kept = {};
+  spans.forEach((span) => {
+    if (span in state.deckThickness.bySpan) kept[span] = state.deckThickness.bySpan[span];
+  });
+  state.deckThickness.bySpan = kept;
+
+  ui.spanThicknessList.innerHTML = "";
+  spans.forEach((span) => {
+    const row = document.createElement("div");
+    row.className = "span-thickness-row";
+    const id = `spanThickness-${span.replace(/[^A-Za-z0-9_-]/g, "_")}`;
+    const label = document.createElement("label");
+    label.className = "form-label mb-0";
+    label.htmlFor = id;
+    label.textContent = `Span ${span}`;
+    const input = document.createElement("input");
+    input.className = "form-control form-control-sm";
+    input.id = id;
+    input.type = "number";
+    input.min = "0";
+    input.step = "0.25";
+    input.value = kept[span] ?? "";
+    input.title = `Deck thickness for span ${span} (in). Blank uses the all-spans value.`;
+    input.dataset.span = span;
+    row.append(label, input);
+    ui.spanThicknessList.appendChild(row);
+  });
+  updateThicknessPlaceholders();
+}
+
+/** Blank span boxes show the all-spans value they fall back to. */
+function updateThicknessPlaceholders() {
+  const fallback = state.deckThickness.all === null ? "All spans" : String(state.deckThickness.all);
+  ui.spanThicknessList?.querySelectorAll("input").forEach((input) => {
+    input.placeholder = fallback;
+  });
+}
+
+/** Reads a thickness box into state; an invalid value is flagged and treated as blank. */
+function onThicknessChange(event) {
+  const input = event.target;
+  if (input !== ui.deckThicknessInput && !input.dataset.span) return;
+  const value = parseThickness(input.value);
+  const valid = !Number.isNaN(value);
+  input.classList.toggle("is-invalid", !valid);
+  const stored = valid ? value : null;
+  if (input === ui.deckThicknessInput) state.deckThickness.all = stored;
+  else state.deckThickness.bySpan[input.dataset.span] = stored;
+
+  const invalid = Array.from(
+    document.querySelectorAll("#deckThicknessInput.is-invalid, #spanThicknessList input.is-invalid"),
+  );
+  ui.deckThicknessStatus.textContent = invalid.length
+    ? "Deck thickness must be a number of inches, 0 or greater (or blank)."
+    : "";
+  updateThicknessPlaceholders();
+  logThicknesses();
+  // The thickness only moves the bottom of deck, so nothing needs recomputing.
+  renderDeflectedDeckChart();
+}
+
+function logThicknesses() {
+  const spans = sortedSpans();
+  if (!spans.length) {
+    const all = state.deckThickness.all;
+    logLine(`Deck thickness: ${all === null ? "not set" : `${all} in`} for all spans.`);
+    return;
+  }
+  const parts = spans.map((span) => {
+    const thickness = deckThicknessFor(span);
+    return `span ${span} ${thickness ? `${thickness.inches} in` : "not set"}`;
+  });
+  logLine(`Deck thickness: ${parts.join(", ")}.`);
 }
 
 // How much of the deck, inward from the DTM edge, sets the cross slope that
@@ -2083,8 +2206,15 @@ function renderDeflectedDeckChart() {
         textposition: selectedPoints.map((point) => (point.side === "L" ? "top center" : "bottom center")),
         textfont: { size: 10, color: "#212529" },
         name: `Span ${selectedSpan} - Girder ${selectedGirder}`,
-        customdata: selectedPoints.map((point) => [...toCustomdata(point), point.code]),
-        hovertemplate: "<b>%{customdata[3]}</b><br>" + hover,
+        customdata: selectedPoints.map((point) => {
+          const bottom = bottomOfDeck(point.deflectedZ, selectedSpan);
+          return [
+            ...toCustomdata(point),
+            point.code,
+            bottom === null ? "" : `<br>Bottom of deck ${bottom.toFixed(3)} ft`,
+          ];
+        }),
+        hovertemplate: "<b>%{customdata[3]}</b><br>" + hover.replace("<extra>", "%{customdata[4]}<extra>"),
       });
     }
   }
@@ -2916,6 +3046,7 @@ function runCalculation() {
   state.topOfGirderPoints = output;
   ui.logOutput.textContent = state.logs.join("\n");
   populateGraphSelectors();
+  renderSpanThicknessList();
   renderProfileChart();
   renderPlanChart();
   setProgress(100, "Calculation complete");
@@ -2944,11 +3075,27 @@ function exportTopOfDeckDeflected() {
   if (state.deflectedDeck) {
     const girderPoints = state.deflectedDeck.girderPoints ?? {};
     const edgePoints = state.deflectedDeck.edgePoints ?? [];
+    // The first four columns keep the N, E, elevation, description layout
+    // (top of deck deflected as the elevation); the other elevations of the
+    // same point follow in their own columns, under the same name.
     const rows = [
-      ["N", "E", "Deflected Elevation (ft)", "Description", "Deck Elevation (ft)", "Deflection (ft)", "Note"],
+      [
+        "N",
+        "E",
+        "Top of Deck Deflected (ft)",
+        "Description",
+        "Top of Deck (ft)",
+        "Bottom of Deck Deflected (ft)",
+        "Deflection (ft)",
+        "Deck Thickness (in)",
+        "Note",
+      ],
     ];
+    const thicknessCell = (span) => deckThicknessFor(span)?.inches ?? "";
+    const bottomCell = (point, span) => bottomOfDeck(point.deflectedZ, span) ?? "";
 
     let screedRows = 0;
+    const unsetSpans = sortedSpans().filter((span) => !deckThicknessFor(span));
     sortedSpans().forEach((span) => {
       sortedGirders(span).forEach((girder) => {
         (girderPoints[`${span}||${girder}`] ?? []).forEach((point) => {
@@ -2958,7 +3105,9 @@ function exportTopOfDeckDeflected() {
             point.deflectedZ,
             point.code,
             point.originalZ,
+            bottomCell(point, span),
             point.isopach,
+            thicknessCell(span),
             "",
           ]);
         });
@@ -2975,7 +3124,9 @@ function exportTopOfDeckDeflected() {
             point.deflectedZ,
             `${formatSpan(span)}${formatGirder(point.girder)}${formatInterval(point.interval)}OH`,
             point.originalZ,
+            bottomCell(point, span),
             point.isopach,
+            thicknessCell(span),
             !point.extended
               ? "Overhang edge; deck from DTM"
               : state.deflectedDeck.overhangSlope === "level"
@@ -2999,6 +3150,12 @@ function exportTopOfDeckDeflected() {
         (screedRows ? ` and ${screedRows} overhang (screed) points` : "") +
         ' to "ToD Deflected.xlsx".',
     );
+    if (unsetSpans.length) {
+      logLine(
+        `Export NOTE: no deck thickness for span ${unsetSpans.join(", ")}; the bottom of deck deflected is left ` +
+          "blank there. Set it under Deck thickness on the Deflected Deck tab.",
+      );
+    }
     return;
   }
 
@@ -3076,6 +3233,287 @@ function exportDeflectedSurfaceXml() {
   return { surface, xml };
 }
 
+// ---------- Girder report ----------
+
+const REPORT_ALL = "__all__";
+
+// Report columns, shared by the on-screen tables and the Excel export.
+// `digits` sets the on-screen rounding; the workbook keeps full precision.
+const REPORT_COLUMNS = [
+  { key: "code", label: "Point" },
+  { key: "interval", label: "Interval" },
+  { key: "side", label: "Side" },
+  { key: "station", label: "Station along girder (ft)", digits: 2 },
+  { key: "deflection", label: "Deflection (ft)", digits: 3 },
+  { key: "topOfGirder", label: "Top of Girder (ft)", digits: 3 },
+  { key: "topOfDeck", label: "Top of Deck (ft)", digits: 3 },
+  { key: "topOfDeckDeflected", label: "Top of Deck Deflected (ft)", digits: 3 },
+  { key: "bottomOfDeck", label: "Bottom of Deck Deflected (ft)", digits: 3 },
+  { key: "haunch", label: "Haunch (in)", digits: 2 },
+];
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (char) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char],
+  );
+}
+
+function fillSelect(select, options, selected) {
+  select.innerHTML = "";
+  options.forEach(({ value, label }) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    select.appendChild(option);
+  });
+  select.value = options.some((option) => option.value === selected) ? selected : options[0].value;
+}
+
+function populateReportSelectors() {
+  const spans = sortedSpans();
+  if (!spans.length) {
+    [ui.reportSpanSelect, ui.reportGirderSelect].forEach((select) => {
+      select.innerHTML = '<option value="">(Calculate first)</option>';
+      select.disabled = true;
+    });
+    return;
+  }
+  ui.reportSpanSelect.disabled = false;
+  fillSelect(
+    ui.reportSpanSelect,
+    [{ value: REPORT_ALL, label: "All" }, ...spans.map((span) => ({ value: span, label: span }))],
+    ui.reportSpanSelect.value,
+  );
+  populateReportGirderSelect();
+}
+
+function populateReportGirderSelect() {
+  const span = ui.reportSpanSelect.value;
+  const girders = span === REPORT_ALL ? [] : sortedGirders(span);
+  fillSelect(
+    ui.reportGirderSelect,
+    [{ value: REPORT_ALL, label: "All" }, ...girders.map((girder) => ({ value: girder, label: girder }))],
+    ui.reportGirderSelect.value,
+  );
+  ui.reportGirderSelect.disabled = span === REPORT_ALL || !span;
+}
+
+/** The girders the report selectors pick, in span then girder order. */
+function reportGirders() {
+  const spanChoice = ui.reportSpanSelect.value;
+  const girderChoice = ui.reportGirderSelect.value;
+  const spans = spanChoice === REPORT_ALL ? sortedSpans() : sortedSpans().filter((span) => span === spanChoice);
+  return spans.flatMap((span) =>
+    sortedGirders(span)
+      .filter((girder) => spanChoice === REPORT_ALL || girderChoice === REPORT_ALL || girder === girderChoice)
+      .map((girder) => ({ span, girder })),
+  );
+}
+
+/**
+ * Every point of one girder -- left and right at each interval, plus the
+ * overhang (OH) point beside an exterior girder -- under the same names as the
+ * exports, with its deflection and elevations. The deflection is the one
+ * applied to the deck at that point once the deck is computed (so top of deck
+ * + deflection = top of deck deflected), and the girder's own before that.
+ */
+function buildGirderReport(span, girder, topOfGirderByCode) {
+  const key = `${span}||${girder}`;
+  const profile = state.profiles[key] ?? [];
+  const deck = state.deflectedDeck;
+  const deckByCode = new Map((deck?.girderPoints?.[key] ?? []).map((point) => [point.code, point]));
+  const overhangByInterval = new Map(
+    (deck?.edgePoints ?? [])
+      .filter((point) => point.span === span && point.girder === girder)
+      .map((point) => [point.interval, point]),
+  );
+  const prefix = `${formatSpan(span)}${formatGirder(girder)}`;
+
+  const row = ({ code, interval, side, station, topOfGirder, deflection, deckPoint }) => {
+    const topOfDeckDeflected = deckPoint?.deflectedZ ?? null;
+    const bottom = topOfDeckDeflected === null ? null : bottomOfDeck(topOfDeckDeflected, span);
+    return {
+      code,
+      interval: formatInterval(interval),
+      side,
+      station,
+      deflection: deckPoint ? deckPoint.isopach : deflection,
+      topOfGirder,
+      topOfDeck: deckPoint?.originalZ ?? null,
+      topOfDeckDeflected,
+      bottomOfDeck: bottom,
+      haunch: bottom !== null && topOfGirder !== null ? (bottom - topOfGirder) * 12 : null,
+    };
+  };
+
+  const rows = [];
+  profile.forEach((point) => {
+    ["L", "R"].forEach((side) => {
+      const code = `${prefix}${formatInterval(point.interval)}${side}`;
+      const girderRow = topOfGirderByCode.get(code);
+      rows.push(
+        row({
+          code,
+          interval: point.interval,
+          side,
+          station: point.station,
+          topOfGirder: girderRow ? girderRow[2] : null,
+          deflection: girderRow ? girderRow[4] : point.deflectionIn / 12,
+          deckPoint: deckByCode.get(code),
+        }),
+      );
+    });
+    const overhang = overhangByInterval.get(point.interval);
+    if (overhang) {
+      rows.push(
+        row({
+          code: `${prefix}${formatInterval(point.interval)}OH`,
+          interval: point.interval,
+          side: "OH",
+          station: point.station,
+          topOfGirder: null,
+          deflection: overhang.isopach,
+          deckPoint: overhang,
+        }),
+      );
+    }
+  });
+
+  return {
+    span,
+    girder,
+    length: profile.length ? profile[profile.length - 1].station : 0,
+    intervals: Math.max(0, profile.length - 1),
+    thickness: deckThicknessFor(span),
+    rows,
+  };
+}
+
+function buildGirderReports() {
+  const topOfGirderByCode = new Map(state.topOfGirderPoints.slice(1).map((row) => [row[3], row]));
+  return reportGirders().map(({ span, girder }) => buildGirderReport(span, girder, topOfGirderByCode));
+}
+
+function describeThickness(thickness) {
+  if (!thickness) return "not set";
+  return `${thickness.inches} in (${thickness.source === "span" ? "this span" : "all spans"})`;
+}
+
+/** Notes on what the report is still missing, or "" when it is complete. */
+function reportNotes(reports) {
+  const notes = [];
+  if (!state.deflectedDeck) {
+    notes.push("Compute deck on the Deflected Deck tab to add the top of deck elevations.");
+  }
+  const unset = [...new Set(reports.filter((report) => !report.thickness).map((report) => report.span))];
+  if (unset.length) {
+    notes.push(
+      `No deck thickness for span ${unset.join(", ")}: the bottom of deck and haunch are blank there.`,
+    );
+  }
+  return notes.join(" ");
+}
+
+function renderGirderReport() {
+  if (!ui.panelReport || ui.panelReport.classList.contains("d-none")) return;
+
+  const reports = buildGirderReports();
+  if (!reports.length) {
+    ui.reportStatus.textContent = "Run the calculation on the Girder Calcs tab first.";
+    ui.reportBody.innerHTML = "";
+    return;
+  }
+  ui.reportStatus.textContent = reportNotes(reports);
+
+  const head = `<thead><tr>${REPORT_COLUMNS.map((column) => `<th>${escapeHtml(column.label)}</th>`).join("")}</tr></thead>`;
+  const cell = (row, column) => {
+    const value = row[column.key];
+    if (value === null || value === undefined) return '<td class="report-empty">&ndash;</td>';
+    return `<td>${escapeHtml(column.digits === undefined ? value : value.toFixed(column.digits))}</td>`;
+  };
+
+  ui.reportBody.innerHTML = reports
+    .map(
+      (report) => `
+      <section class="report-girder">
+        <h3 class="report-girder-title">Span ${escapeHtml(report.span)} &mdash; Girder ${escapeHtml(report.girder)}</h3>
+        <p class="report-meta">
+          Length ${report.length.toFixed(2)} ft &middot; ${report.intervals} intervals &middot;
+          Deck thickness ${escapeHtml(describeThickness(report.thickness))}
+        </p>
+        <div class="report-table-wrap">
+          <table class="table table-sm table-striped align-middle mb-0 report-table">
+            ${head}
+            <tbody>${report.rows
+              .map((row) => `<tr${row.side === "OH" ? ' class="report-overhang"' : ""}>${REPORT_COLUMNS.map((column) => cell(row, column)).join("")}</tr>`)
+              .join("")}</tbody>
+          </table>
+        </div>
+      </section>`,
+    )
+    .join("");
+}
+
+/** A unique Excel sheet name (31 characters at most, none of : \ / ? * [ ]). */
+function reportSheetName(span, girder, used) {
+  const base = `S${span} G${girder}`.replace(/[:\\/?*[\]]/g, "_").slice(0, 31);
+  let name = base;
+  for (let n = 2; used.has(name.toLowerCase()); n += 1) {
+    const suffix = ` (${n})`;
+    name = base.slice(0, 31 - suffix.length) + suffix;
+  }
+  used.add(name.toLowerCase());
+  return name;
+}
+
+function exportGirderReport() {
+  if (state.topOfGirderPoints.length <= 1) {
+    window.alert("Please run the calculation first.");
+    return;
+  }
+  const reports = buildGirderReports();
+  if (!reports.length) {
+    window.alert("No girders are selected for the report.");
+    return;
+  }
+
+  const workbook = XLSX.utils.book_new();
+  const used = new Set();
+  reports.forEach((report) => {
+    const thickness = report.thickness ? report.thickness.inches : "Not set";
+    const rows = [
+      ["Span", report.span],
+      ["Girder", report.girder],
+      ["Length (ft)", report.length],
+      ["Deck thickness (in)", thickness],
+      [],
+      REPORT_COLUMNS.map((column) => column.label),
+      ...report.rows.map((row) => REPORT_COLUMNS.map((column) => row[column.key] ?? "")),
+    ];
+    const sheet = XLSX.utils.aoa_to_sheet(rows);
+    XLSX.utils.book_append_sheet(workbook, sheet, reportSheetName(report.span, report.girder, used));
+  });
+  const output = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+  const url = URL.createObjectURL(new Blob([output], { type: "application/octet-stream" }));
+  triggerDownload(url, "Girder report.xlsx");
+
+  const notes = reportNotes(reports);
+  logLine(
+    `Export: wrote the girder report for ${reports.length} girder${reports.length === 1 ? "" : "s"} ` +
+      `(one sheet each) to "Girder report.xlsx".` +
+      (notes ? ` ${notes}` : ""),
+  );
+}
+
+function printGirderReport() {
+  if (!buildGirderReports().length) {
+    window.alert("Please run the calculation first.");
+    return;
+  }
+  renderGirderReport();
+  window.print();
+}
+
 function downloadLog() {
   const blob = new Blob([ui.logOutput.textContent || "No log entries yet."], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -3087,6 +3525,7 @@ renderSourceGrid();
 ui.tabDataBtn.addEventListener("click", () => activateTab("data"));
 ui.tabGraphsBtn.addEventListener("click", () => activateTab("graphs"));
 ui.tabExportBtn.addEventListener("click", () => activateTab("export"));
+ui.tabReportBtn.addEventListener("click", () => activateTab("report"));
 
 document.getElementById("downloadTemplateBtn").addEventListener("click", downloadTemplate);
 document.getElementById("calculateBtn").addEventListener("click", runCalculation);
@@ -3094,6 +3533,18 @@ document.getElementById("exportGirderBtn").addEventListener("click", exportTopOf
 document.getElementById("projectBtn").addEventListener("click", exportTopOfDeckDeflected);
 document.getElementById("exportSurfaceBtn").addEventListener("click", exportDeflectedSurfaceXml);
 document.getElementById("downloadLogBtn").addEventListener("click", downloadLog);
+document.getElementById("exportReportBtn").addEventListener("click", exportGirderReport);
+document.getElementById("printReportBtn").addEventListener("click", printGirderReport);
+
+// Thickness boxes: the all-spans value and the per-span list (built after Calculate).
+ui.deckThicknessInput.addEventListener("change", onThicknessChange);
+ui.spanThicknessList.addEventListener("change", onThicknessChange);
+
+ui.reportSpanSelect.addEventListener("change", () => {
+  populateReportGirderSelect();
+  renderGirderReport();
+});
+ui.reportGirderSelect.addEventListener("change", renderGirderReport);
 
 ui.fileInput.addEventListener("change", async () => {
   try {

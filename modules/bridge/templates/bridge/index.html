@@ -40,6 +40,9 @@
           <li class="nav-item" role="presentation">
             <button class="nav-link" id="tabExportBtn" type="button">Deflected Deck</button>
           </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tabReportBtn" type="button">Girder Report</button>
+          </li>
         </ul>
 
         <section id="panelData" class="workspace">
@@ -146,6 +149,23 @@
                 <option value="slope" selected>Carry the cross slope</option>
                 <option value="level">Level from the edge of deck</option>
               </select>
+            </div>
+
+            <div class="sidebar-group">
+              <h2 class="sidebar-title">Deck thickness</h2>
+              <label for="deckThicknessInput" class="form-label">All spans (in)</label>
+              <input
+                class="form-control form-control-sm"
+                id="deckThicknessInput"
+                type="number"
+                min="0"
+                step="0.25"
+                placeholder="Not set"
+                title="Deck slab thickness used for every span that has no value of its own. Bottom of deck deflected = top of deck deflected - thickness, measured vertically."
+              />
+              <div id="spanThicknessList" class="span-thickness-list"></div>
+              <p id="deckThicknessStatus" class="status-message"></p>
+              <p class="sidebar-hint mt-2 mb-0">A blank span uses the all-spans value. Needed for the bottom of deck deflected.</p>
             </div>
 
             <div class="sidebar-group">
@@ -271,6 +291,41 @@
             <div id="deckChart" class="chart-frame chart-frame-upper"></div>
             <p id="sectionStatus" class="status-message chart-status mt-2"></p>
             <div id="sectionChart" class="chart-frame chart-frame-lower"></div>
+          </div>
+        </section>
+
+        <section id="panelReport" class="workspace d-none">
+          <aside class="workspace-sidebar" aria-label="Girder report options">
+            <div class="sidebar-group">
+              <h2 class="sidebar-title">Girders</h2>
+              <div class="sidebar-pair">
+                <div>
+                  <label for="reportSpanSelect" class="form-label">Span</label>
+                  <select id="reportSpanSelect" class="form-select form-select-sm" disabled>
+                    <option value="">(Calculate first)</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="reportGirderSelect" class="form-label">Girder</label>
+                  <select id="reportGirderSelect" class="form-select form-select-sm" disabled>
+                    <option value="">(Calculate first)</option>
+                  </select>
+                </div>
+              </div>
+              <p class="sidebar-hint mt-2 mb-0">Deck elevations need Compute deck; the bottom of deck also needs the deck thickness (Deflected Deck tab).</p>
+            </div>
+
+            <div class="sidebar-group">
+              <h2 class="sidebar-title">Export report</h2>
+              <div class="sidebar-buttons">
+                <button id="exportReportBtn" class="btn btn-outline-primary btn-sm" type="button" title="Export the girder report, one sheet per girder (.xlsx)">Excel</button>
+                <button id="printReportBtn" class="btn btn-outline-secondary btn-sm" type="button" title="Print the girders shown, or save them as PDF">Print / PDF</button>
+              </div>
+            </div>
+          </aside>
+          <div class="workspace-main">
+            <p id="reportStatus" class="status-message chart-status"></p>
+            <div id="reportBody" class="girder-report"></div>
           </div>
         </section>
       </section>

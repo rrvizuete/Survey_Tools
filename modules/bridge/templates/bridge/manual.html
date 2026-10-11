@@ -18,8 +18,8 @@
       <p class="eyebrow">Bridge Superstructure · User Manual</p>
       <h1>Girder and Top of Deck Deflected Points</h1>
       <p>
-        How to compute top-of-girder and deflected top-of-deck elevations, extend the deck to the screed,
-        review sections along an alignment, and export survey-ready deliverables.
+        How to compute top-of-girder and deflected top- and bottom-of-deck elevations, extend the deck to the screed,
+        review sections along an alignment, report every girder point, and export survey-ready deliverables.
       </p>
     </div>
     <div class="manual-cover-actions">
@@ -38,6 +38,7 @@
       <li><a href="#deflected-deck">Deflected Deck tab</a></li>
       <li><a href="#overhang">Overhang &amp; screed</a></li>
       <li><a href="#sections">Alignment sections</a></li>
+      <li><a href="#girder-report">Girder Report tab</a></li>
       <li><a href="#exports">Exports &amp; point naming</a></li>
       <li><a href="#methods">Calculation methods</a></li>
       <li><a href="#troubleshooting">QC &amp; troubleshooting</a></li>
@@ -58,9 +59,9 @@
       <ol class="manual-steps">
         <li><strong>Girder data</strong><span>Fill in the template and upload it on the Girder Calcs tab.</span></li>
         <li><strong>Calculate</strong><span>Build top-of-girder points and deflection profiles.</span></li>
-        <li><strong>Deflected deck</strong><span>Upload the deck DTM, set the overhang, and compute.</span></li>
-        <li><strong>Review</strong><span>Check the plan view and sections along an alignment.</span></li>
-        <li><strong>Export</strong><span>Download points (Excel) and the deflected surface (LandXML).</span></li>
+        <li><strong>Deflected deck</strong><span>Upload the deck DTM, set the overhang and deck thickness, and compute.</span></li>
+        <li><strong>Review</strong><span>Check the plan view, sections along an alignment, and the girder report.</span></li>
+        <li><strong>Export</strong><span>Download points and the girder report (Excel) and the deflected surface (LandXML).</span></li>
       </ol>
       <p>All work happens in your browser; files are not uploaded to a server.</p>
     </section>
@@ -172,6 +173,8 @@
         <li>Optionally enter an <span class="ui">Overhang (ft)</span> and pick the <span class="ui">Overhang grade</span>
           &ndash; see <a href="#overhang">Overhang &amp; screed</a>.</li>
         <li>Choose <span class="ui">Compute deck</span>.</li>
+        <li>Enter the <span class="ui">Deck thickness</span> &ndash; see <a href="#deck-thickness">Deck thickness</a>
+          below. It can be set or changed at any time; nothing needs recomputing.</li>
       </ol>
       <p>
         The tool builds a deflection (isopach) surface between the girders and adds it to the deck:
@@ -195,8 +198,60 @@
         </li>
         <li>Black is the deck outline, grey the girders. Dashed orange lines are the overhang edges (screed lines).</li>
         <li>Pick a <span class="ui">Span</span>/<span class="ui">Girder</span> (or click a girder) to highlight it and label
-          its deflected deck points with their export names. Hover any point for its elevations.</li>
+          its deflected deck points with their export names. Hover any point for its elevations, including the bottom
+          of deck once a deck thickness is set.</li>
       </ul>
+
+      <h3 id="deck-thickness">Deck thickness</h3>
+      <p>
+        The deck thickness turns the deflected top of deck into the <strong>bottom of deck deflected</strong>, the
+        elevation of the underside of the slab:
+      </p>
+      <ul>
+        <li><span class="ui">All spans (in)</span> is the slab thickness, in inches, used by every span.</li>
+        <li>After <span class="ui">Calculate</span>, one box per span is listed below it. Enter a value there to give that
+          span its own thickness; leave it blank to use the all-spans value (shown greyed in the box).</li>
+        <li>The thickness is measured vertically: <strong>bottom of deck deflected = top of deck deflected &minus;
+          thickness</strong>. The overhang (<code>OH</code>) points use the thickness of their span.</li>
+        <li>Without a thickness for a span, its bottom of deck (and haunch) is left blank in the exports and the
+          report, and the log says which spans are missing.</li>
+      </ul>
+
+      <figure class="manual-figure">
+        <svg viewBox="0 40 900 200" role="img" aria-label="Section through the deck over a girder: the top of deck, the top of deck deflected above it by the deflection, and the bottom of deck deflected one deck thickness below the deflected top. The haunch is the gap from the top of girder to the bottom of deck.">
+          <!-- girder -->
+          <path d="M380 150 h140 v14 h-50 v60 h-40 v-60 h-50 z" fill="#c7d0dc" stroke="#8a97a8" stroke-width="1.5" />
+          <!-- slab (deflected) -->
+          <rect x="100" y="70" width="540" height="56" fill="#dbe4ee" stroke="none" />
+          <!-- top of deck (original) -->
+          <line x1="100" y1="88" x2="640" y2="88" stroke="var(--m-original)" stroke-width="2.5" stroke-dasharray="9 6" />
+          <!-- top of deck deflected -->
+          <line x1="100" y1="70" x2="640" y2="70" stroke="var(--m-deflected)" stroke-width="3" />
+          <!-- bottom of deck deflected -->
+          <line x1="100" y1="126" x2="640" y2="126" stroke="#172033" stroke-width="2.5" />
+          <!-- top of girder -->
+          <line x1="360" y1="150" x2="540" y2="150" stroke="#8a97a8" stroke-width="2" />
+          <!-- dimensions -->
+          <line x1="150" y1="70" x2="150" y2="126" stroke="#172033" stroke-width="1.2" marker-start="url(#arrow3)" marker-end="url(#arrow3)" />
+          <text class="figure-label" x="160" y="104">Deck thickness</text>
+          <line x1="610" y1="70" x2="610" y2="88" stroke="var(--m-deflected)" stroke-width="1.2" />
+          <text class="figure-note" x="560" y="84" text-anchor="end" fill="var(--m-deflected)">Deflection</text>
+          <line x1="560" y1="126" x2="560" y2="150" stroke="#172033" stroke-width="1.2" />
+          <text class="figure-note" x="568" y="143">Haunch</text>
+          <!-- labels -->
+          <text class="figure-label" x="650" y="66" fill="var(--m-deflected)">Top of deck deflected</text>
+          <text class="figure-note" x="650" y="92" fill="var(--m-original)">Top of deck (DTM)</text>
+          <text class="figure-label" x="650" y="130">Bottom of deck deflected</text>
+          <text class="figure-note" x="352" y="146" text-anchor="end">Top of girder</text>
+          <defs>
+            <marker id="arrow3" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="#172033" />
+            </marker>
+          </defs>
+        </svg>
+        <figcaption>Figure 1 &ndash; The elevations reported at every girder point. Deflection and haunch are exaggerated
+          for clarity.</figcaption>
+      </figure>
     </section>
 
     <!-- 6 -->
@@ -286,7 +341,7 @@
             </marker>
           </defs>
         </svg>
-        <figcaption>Figure 1 &ndash; Section at the exterior girder. Both overhang options start from the deflected
+        <figcaption>Figure 2 &ndash; Section at the exterior girder. Both overhang options start from the deflected
           deck at the edge of deck. Deflection, cross slope and overhang width are exaggerated for clarity.</figcaption>
       </figure>
 
@@ -332,8 +387,48 @@
     </section>
 
     <!-- 8 -->
+    <section class="manual-section" id="girder-report">
+      <h2><span class="num">8</span> Girder Report tab</h2>
+      <p>
+        The girder report lists, girder by girder, every point of the girder: the left (<code>L</code>) and right
+        (<code>R</code>) edges at each interval and, beside an exterior girder with an overhang offset, the overhang
+        (<code>OH</code>) point. Each point keeps the same name as in the exports.
+      </p>
+      <ol>
+        <li>Run the calculation on the Girder Calcs tab. The report then shows each girder's top of girder.</li>
+        <li>Choose <span class="ui">Compute deck</span> on the Deflected Deck tab to add the deck elevations, and set the
+          <a href="#deck-thickness">deck thickness</a> to add the bottom of deck. A note above the report says what is
+          still missing.</li>
+        <li>Pick a <span class="ui">Span</span> and <span class="ui">Girder</span>, or leave either on
+          <span class="ui">All</span>, to choose the girders shown.</li>
+        <li><span class="ui">Excel</span> downloads the girders shown, one sheet per girder; <span class="ui">Print / PDF</span>
+          prints them (or saves them as PDF), one girder per page.</li>
+      </ol>
+      <div class="manual-table-wrap">
+        <table class="manual-table">
+          <thead><tr><th>Column</th><th>Unit</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>Point</td><td>&ndash;</td><td>Point name, as in the exports (see <a href="#exports">point naming</a>).</td></tr>
+            <tr><td>Interval / Side</td><td>&ndash;</td><td>Interval number and <code>L</code>, <code>R</code> or <code>OH</code>.</td></tr>
+            <tr><td>Station along girder</td><td>ft</td><td>Distance along the girder centerline from Support1.</td></tr>
+            <tr><td>Deflection</td><td>ft</td><td>The deflection applied to the deck at the point, so top of deck + deflection
+              = top of deck deflected (the same value as the Points export). Before <span class="ui">Compute deck</span>,
+              the girder's own deflection.</td></tr>
+            <tr><td>Top of Girder</td><td>ft</td><td>As in the Top of girder export. Blank for <code>OH</code> points.</td></tr>
+            <tr><td>Top of Deck</td><td>ft</td><td>The DTM elevation above the point.</td></tr>
+            <tr><td>Top of Deck Deflected</td><td>ft</td><td>Top of deck + deflection.</td></tr>
+            <tr><td>Bottom of Deck Deflected</td><td>ft</td><td>Top of deck deflected &minus; the span's deck thickness.</td></tr>
+            <tr><td>Haunch</td><td>in</td><td>Bottom of deck deflected &minus; top of girder: the gap between the girder and the
+              underside of the slab.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Each Excel sheet starts with the span, girder, girder length and deck thickness, followed by the table.</p>
+    </section>
+
+    <!-- 9 -->
     <section class="manual-section" id="exports">
-      <h2><span class="num">8</span> Exports &amp; point naming</h2>
+      <h2><span class="num">9</span> Exports &amp; point naming</h2>
       <div class="manual-table-wrap">
         <table class="manual-table">
           <thead><tr><th>Button</th><th>File</th><th>Contents</th></tr></thead>
@@ -347,15 +442,24 @@
             <tr>
               <td>Deflected Deck &rsaquo; Export deflected deck &rsaquo; <strong>Points</strong></td>
               <td class="nowrap"><code>ToD Deflected.xlsx</code></td>
-              <td>N, E, Deflected Elevation, Description, Deck Elevation, Deflection (ft), Note. Deck points directly above
-                the <strong>same left and right positions, with the same names,</strong> as the top-of-girder points. With
-                an overhang offset, <code>OH</code> points follow each span's girders.</td>
+              <td>N, E, Top of Deck Deflected, Description, Top of Deck, Bottom of Deck Deflected, Deflection (ft), Deck
+                Thickness (in), Note. One row per point, with each elevation in its own column; the first four columns
+                keep the N, E, elevation, description layout. Deck points sit directly above the <strong>same left and
+                right positions, with the same names,</strong> as the top-of-girder points. With an overhang offset,
+                <code>OH</code> points follow each span's girders. Bottom of deck is blank for a span with no deck
+                thickness.</td>
             </tr>
             <tr>
               <td>Deflected Deck &rsaquo; Export deflected deck &rsaquo; <strong>Surface (XML)</strong></td>
               <td class="nowrap"><code>ToD Deflected Surface.xml</code></td>
               <td>LandXML TIN of the deflected deck, extended to the overhang offset, for laying out the screed. With an
                 overhang, the edge of deck is included as break lines. Keeps the DTM's units.</td>
+            </tr>
+            <tr>
+              <td>Girder Report &rsaquo; Export report &rsaquo; <strong>Excel</strong></td>
+              <td class="nowrap"><code>Girder report.xlsx</code></td>
+              <td>One sheet per girder shown, with every point's deflection and elevations &ndash; see
+                <a href="#girder-report">Girder Report tab</a>.</td>
             </tr>
             <tr>
               <td>Girder Calcs &rsaquo; Export &rsaquo; <strong>Log file</strong></td>
@@ -377,7 +481,8 @@
         <code>L</code> and <code>R</code> are the left and right girder edges, looking from Support1 to Support2.
         Numeric spans and girders are padded to two digits (span <code>1</code>, girder <code>3</code>, interval
         <code>5</code>, right edge &rarr; <code>010305R</code>). <code>OH</code> marks the overhang edge beside that
-        exterior girder, e.g. <code>A1005OH</code>.
+        exterior girder, e.g. <code>A1005OH</code>. A point has the same name in every export and in the girder report,
+        so its top of girder, top of deck, top of deck deflected and bottom of deck deflected can be matched by name.
       </p>
 
       <figure class="manual-figure">
@@ -409,14 +514,14 @@
             </marker>
           </defs>
         </svg>
-        <figcaption>Figure 2 &ndash; Plan of an exterior girder (girder 01, span A). Blue: top-of-girder and deflected deck
+        <figcaption>Figure 3 &ndash; Plan of an exterior girder (girder 01, span A). Blue: top-of-girder and deflected deck
           points (same positions and names in both exports). Orange: overhang (screed) points.</figcaption>
       </figure>
     </section>
 
-    <!-- 9 -->
+    <!-- 10 -->
     <section class="manual-section" id="methods">
-      <h2><span class="num">9</span> Calculation methods</h2>
+      <h2><span class="num">10</span> Calculation methods</h2>
 
       <h3>Girder geometry</h3>
       <p>
@@ -444,6 +549,13 @@ t = 1/2 (midspan, required), 1/4 and 1/3 (optional)</code>
       <code class="formula">Deflected Z = DTM Z + deflection(N, E)</code>
       <p>The overhang holds the exterior girder's deflection. Beyond the span ends the deflection is zero.</p>
 
+      <h3>Bottom of deck</h3>
+      <code class="formula">Bottom of Deck Deflected = Deflected Z &minus; t / 12
+Haunch (in) = (Bottom of Deck Deflected &minus; Top of girder) &middot; 12
+t = deck thickness of the point's span (in): its own value, else the all-spans value</code>
+      <p>The thickness is taken vertically, which for normal deck cross slopes differs from the thickness square to the
+        deck by a negligible amount.</p>
+
       <h3>Overhang extension</h3>
       <code class="formula">Deflected Z(screed) = Deflected Z(edge of deck) + s &middot; offset
 Deflected Z(edge of deck) = DTM Z(edge of deck) + exterior girder deflection
@@ -465,9 +577,9 @@ s = 0                                                                           
       </p>
     </section>
 
-    <!-- 10 -->
+    <!-- 11 -->
     <section class="manual-section" id="troubleshooting">
-      <h2><span class="num">10</span> QC &amp; troubleshooting</h2>
+      <h2><span class="num">11</span> QC &amp; troubleshooting</h2>
       <p>Check the <em>Calculation Log</em> after each step. Common messages:</p>
       <div class="manual-table-wrap">
         <table class="manual-table">
@@ -483,6 +595,13 @@ s = 0                                                                           
               <td>A span has a single girder; deflection is treated as zero across it.</td></tr>
             <tr><td>Overhang WARNING: the DTM does not cover this exterior girder</td>
               <td>The edge of deck could not be found, so the offset is measured from the girder centerline instead.</td></tr>
+            <tr><td>Bottom of deck deflected or haunch is blank</td>
+              <td>No deck thickness is set for that span. Enter it under <span class="ui">Deck thickness</span> on the
+                Deflected Deck tab (all spans, or the span's own box).</td></tr>
+            <tr><td>Top of deck columns are blank in the girder report</td>
+              <td>Choose <span class="ui">Compute deck</span> on the Deflected Deck tab; a point outside the DTM also stays blank.</td></tr>
+            <tr><td>Haunch is negative</td>
+              <td>The bottom of deck is below the top of girder: check the deck thickness, the DTM and the girder data.</td></tr>
             <tr><td>The bridge is not alongside this alignment</td>
               <td>The chosen alignment ends at or crosses the bridge. Choose one that runs along the deck.</td></tr>
             <tr><td>Station &hellip; does not cross the deck or any girder</td>
@@ -494,9 +613,9 @@ s = 0                                                                           
       </div>
     </section>
 
-    <!-- 11 -->
+    <!-- 12 -->
     <section class="manual-section" id="support">
-      <h2><span class="num">11</span> Support</h2>
+      <h2><span class="num">12</span> Support</h2>
       <p>For questions, issues, or suggestions, contact <strong>Rafa Ramirez</strong>.</p>
       <p class="manual-footer-note">Include the <code>Log.txt</code> file and, if possible, the input files with any report.</p>
     </section>
