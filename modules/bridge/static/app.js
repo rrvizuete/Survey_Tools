@@ -3341,9 +3341,9 @@ function reportGirders() {
 }
 
 /**
- * Every point of one girder -- left and right at each interval, plus the
- * overhang (OH) point beside an exterior girder -- under the same names as the
- * exports, with its deflection and elevations. The deflection is the one
+ * Every point of one girder -- left and right at each interval -- under the
+ * same names as the exports, with its deflection and elevations. Overhang (OH)
+ * points belong to the deck, not the girder, so they stay in the Points export. The deflection is the one
  * applied to the deck at that point once the deck is computed (so top of deck
  * + deflection = top of deck deflected), and the girder's own before that.
  */
@@ -3353,61 +3353,30 @@ function buildGirderReport(span, girder) {
   const profile = state.profiles[key] ?? [];
   const deck = state.deflectedDeck;
   const deckByCode = new Map((deck?.girderPoints?.[key] ?? []).map((point) => [point.code, point]));
-  const overhangByInterval = new Map(
-    (deck?.edgePoints ?? [])
-      .filter((point) => point.span === span && point.girder === girder)
-      .map((point) => [point.interval, point]),
-  );
   const prefix = `${formatSpan(span)}${formatGirder(girder)}`;
-
-  const row = ({ code, interval, side, station, topOfGirder, deflection, deckPoint }) => {
-    const topOfDeckDeflected = deckPoint?.deflectedZ ?? null;
-    const bottom = topOfDeckDeflected === null ? null : bottomOfDeck(topOfDeckDeflected, span);
-    return {
-      code,
-      interval: formatInterval(interval),
-      side,
-      station,
-      deflection: deckPoint ? deckPoint.isopach : deflection,
-      topOfGirder,
-      topOfDeck: deckPoint?.originalZ ?? null,
-      topOfDeckDeflected,
-      bottomOfDeck: bottom,
-      haunch: bottom !== null && topOfGirder !== null ? (bottom - topOfGirder) * 12 : null,
-    };
-  };
 
   const rows = [];
   profile.forEach((point) => {
     ["L", "R"].forEach((side) => {
       const code = `${prefix}${formatInterval(point.interval)}${side}`;
       const girderRow = topOfGirderByCode.get(code);
-      rows.push(
-        row({
-          code,
-          interval: point.interval,
-          side,
-          station: point.station,
-          topOfGirder: girderRow ? girderRow[2] : null,
-          deflection: girderRow ? girderRow[4] : point.deflectionIn / 12,
-          deckPoint: deckByCode.get(code),
-        }),
-      );
+      const topOfGirder = girderRow ? girderRow[2] : null;
+      const deckPoint = deckByCode.get(code);
+      const topOfDeckDeflected = deckPoint?.deflectedZ ?? null;
+      const bottom = topOfDeckDeflected === null ? null : bottomOfDeck(topOfDeckDeflected, span);
+      rows.push({
+        code,
+        interval: formatInterval(point.interval),
+        side,
+        station: point.station,
+        deflection: deckPoint ? deckPoint.isopach : girderRow ? girderRow[4] : point.deflectionIn / 12,
+        topOfGirder,
+        topOfDeck: deckPoint?.originalZ ?? null,
+        topOfDeckDeflected,
+        bottomOfDeck: bottom,
+        haunch: bottom !== null && topOfGirder !== null ? (bottom - topOfGirder) * 12 : null,
+      });
     });
-    const overhang = overhangByInterval.get(point.interval);
-    if (overhang) {
-      rows.push(
-        row({
-          code: `${prefix}${formatInterval(point.interval)}OH`,
-          interval: point.interval,
-          side: "OH",
-          station: point.station,
-          topOfGirder: null,
-          deflection: overhang.isopach,
-          deckPoint: overhang,
-        }),
-      );
-    }
   });
 
   return {
@@ -3475,7 +3444,7 @@ function renderGirderReport() {
           <table class="table table-sm table-striped align-middle mb-0 report-table">
             ${head}
             <tbody>${report.rows
-              .map((row) => `<tr${row.side === "OH" ? ' class="report-overhang"' : ""}>${REPORT_COLUMNS.map((column) => cell(row, column)).join("")}</tr>`)
+              .map((row) => `<tr>${REPORT_COLUMNS.map((column) => cell(row, column)).join("")}</tr>`)
               .join("")}</tbody>
           </table>
         </div>

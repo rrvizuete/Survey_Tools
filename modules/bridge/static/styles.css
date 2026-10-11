@@ -442,10 +442,6 @@
   color: var(--muted);
 }
 
-.report-table tr.report-overhang td {
-  color: #b35c00;
-}
-
 /* Print / PDF of the girder report: only the report tables. */
 @media print {
   .toolbox-bar,

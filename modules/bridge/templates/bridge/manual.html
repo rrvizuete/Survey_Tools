@@ -391,8 +391,8 @@
       <h2><span class="num">8</span> Girder Report tab</h2>
       <p>
         The girder report lists, girder by girder, every point of the girder: the left (<code>L</code>) and right
-        (<code>R</code>) edges at each interval and, beside an exterior girder with an overhang offset, the overhang
-        (<code>OH</code>) point. Each point keeps the same name as in the exports.
+        (<code>R</code>) edges at each interval. Each point keeps the same name as in the exports. Overhang
+        (<code>OH</code>) points are not girder points, so they are left out; they are in the Points export.
       </p>
       <ol>
         <li>Run the calculation on the Girder Calcs tab. The report then shows each girder's top of girder.</li>
@@ -409,12 +409,12 @@
           <thead><tr><th>Column</th><th>Unit</th><th>Notes</th></tr></thead>
           <tbody>
             <tr><td>Point</td><td>&ndash;</td><td>Point name, as in the exports (see <a href="#exports">point naming</a>).</td></tr>
-            <tr><td>Interval / Side</td><td>&ndash;</td><td>Interval number and <code>L</code>, <code>R</code> or <code>OH</code>.</td></tr>
+            <tr><td>Interval / Side</td><td>&ndash;</td><td>Interval number and <code>L</code> or <code>R</code>.</td></tr>
             <tr><td>Station along girder</td><td>ft</td><td>Distance along the girder centerline from Support1.</td></tr>
             <tr><td>Deflection</td><td>ft</td><td>The deflection applied to the deck at the point, so top of deck + deflection
               = top of deck deflected (the same value as the Points export). Before <span class="ui">Compute deck</span>,
               the girder's own deflection.</td></tr>
-            <tr><td>Top of Girder</td><td>ft</td><td>As in the Top of girder export. Blank for <code>OH</code> points.</td></tr>
+            <tr><td>Top of Girder</td><td>ft</td><td>As in the Top of girder export.</td></tr>
             <tr><td>Top of Deck</td><td>ft</td><td>The DTM elevation above the point.</td></tr>
             <tr><td>Top of Deck Deflected</td><td>ft</td><td>Top of deck + deflection.</td></tr>
             <tr><td>Bottom of Deck Deflected</td><td>ft</td><td>Top of deck deflected &minus; the span's deck thickness.</td></tr>
