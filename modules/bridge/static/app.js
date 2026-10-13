@@ -1712,9 +1712,70 @@ const PLAN_SURFACES = {
 const PLAN_SURFACE_CELLS = 240;
 const PLAN_SURFACE_PIXELS = 3000;
 
+// Plan view option that draws the DTM's own triangles (its TIN faces, as
+// imported) instead of shading a surface.
+const DTM_TRIANGLES = "triangles";
+
 function selectedPlanSurface() {
   const mode = ui.planSurfaceSelect?.value;
-  return PLAN_SURFACES[mode] ? mode : "isopach";
+  return PLAN_SURFACES[mode] || mode === DTM_TRIANGLES ? mode : "isopach";
+}
+
+let dtmTriangleCache = { surface: null, x: [], y: [], edges: 0 };
+
+/**
+ * The DTM's triangle edges as one line trace, each edge shared by two faces
+ * drawn once, plus its vertices for the elevation readout until Compute deck
+ * adds the deflected points. Empty without TIN faces.
+ */
+function dtmTriangleTraces() {
+  const surface = state.dtm;
+  if (!surface?.faces.length) return [];
+
+  if (dtmTriangleCache.surface !== surface) {
+    const x = [];
+    const y = [];
+    const seen = new Set();
+    surface.faces.forEach((face) => {
+      [[face[0], face[1]], [face[1], face[2]], [face[2], face[0]]].forEach(([i, j]) => {
+        const a = surface.points[i];
+        const b = surface.points[j];
+        if (!a || !b) return;
+        const key = i < j ? `${i}|${j}` : `${j}|${i}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        x.push(a.e, b.e, null);
+        y.push(a.n, b.n, null);
+      });
+    });
+    dtmTriangleCache = { surface, x, y, edges: seen.size };
+  }
+
+  const traces = [
+    {
+      // SVG rather than WebGL, which would draw over the girders and outline.
+      type: "scatter",
+      x: dtmTriangleCache.x,
+      y: dtmTriangleCache.y,
+      mode: "lines",
+      line: { width: 0.6, color: "rgba(61,106,153,0.55)" },
+      name: "DTM triangles",
+      hoverinfo: "skip",
+    },
+  ];
+  if (!state.deflectedDeck) {
+    traces.push({
+      type: "scattergl",
+      x: surface.points.map((point) => point.e),
+      y: surface.points.map((point) => point.n),
+      mode: "markers",
+      marker: { size: 4, color: "rgba(33,37,41,0.55)" },
+      name: "DTM points",
+      customdata: surface.points.map((point) => point.z),
+      hovertemplate: "N %{y:.3f}<br>E %{x:.3f}<br>DTM %{customdata:.3f} ft<extra></extra>",
+    });
+  }
+  return traces;
 }
 
 /** Plotly-style colorscale lookup: t in [0, 1] -> [r, g, b]. */
@@ -2230,14 +2291,17 @@ function samplePlanGrid(shapes, { inside, value }) {
   return { xs, ys, z, step };
 }
 
-/** Adds the contour lines for the shaded surface, if turned on, and reports on them. */
-function addContourOverlay(traces, shaded) {
+/**
+ * Adds the contour lines for the shaded surface, if turned on, and reports on
+ * them. `unshadedNote` explains a turned-on toggle when nothing is shaded.
+ */
+function addContourOverlay(traces, shaded, unshadedNote = "") {
   const status = ui.contourStatus;
   const setStatus = (text) => {
     if (status) status.textContent = text;
   };
   if (!ui.contoursToggle?.checked || !shaded) {
-    setStatus("");
+    setStatus(ui.contoursToggle?.checked ? unshadedNote : "");
     return;
   }
 
@@ -2273,7 +2337,7 @@ function renderDeflectedDeckChart() {
 
   const mode = selectedPlanSurface();
   const planSurface = PLAN_SURFACES[mode];
-  const shaded = buildPlanSurface(outlineRings, mode);
+  const shaded = planSurface ? buildPlanSurface(outlineRings, mode) : null;
   if (shaded) {
     images.push(shaded.image);
     // The image carries the colour; this invisible heatmap supplies the hover
@@ -2297,7 +2361,12 @@ function renderDeflectedDeckChart() {
       hovertemplate: `N %{y:.3f}<br>E %{x:.3f}<br>${planSurface.hover} %{z:.3f} ft<extra></extra>`,
     });
   }
-  addContourOverlay(traces, shaded);
+  if (mode === DTM_TRIANGLES) traces.push(...dtmTriangleTraces());
+  addContourOverlay(
+    traces,
+    shaded,
+    mode === DTM_TRIANGLES ? "Contours are drawn on a shaded surface; pick one under Shade the deck by." : "",
+  );
 
   outlineRings.forEach((ring, index) => {
     if (ring.length < 3) return;
