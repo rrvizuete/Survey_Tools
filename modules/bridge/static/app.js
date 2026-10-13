@@ -1721,11 +1721,73 @@ function selectedPlanSurface() {
   return PLAN_SURFACES[mode] || mode === DTM_TRIANGLES ? mode : "isopach";
 }
 
-let dtmTriangleCache = { surface: null, x: [], y: [], edges: 0 };
+let dtmTriangleCache = { surface: null, x: [], y: [], edges: 0, lines: 0 };
+
+/**
+ * A TIN's edges, each once, joined end to end into as few polylines as a
+ * greedy walk finds, as null-separated x/y. Plotly draws one SVG path per
+ * polyline, so a 50k-point DTM (~150k edges) becomes a few long paths
+ * instead of one path per edge, which keeps zoom and pan responsive.
+ */
+function chainTinEdges(points, faces) {
+  // Unique edges and, per vertex, the edges that meet there.
+  const ends = [];
+  const byVertex = points.map(() => []);
+  const seen = new Set();
+  faces.forEach((face) => {
+    [[face[0], face[1]], [face[1], face[2]], [face[2], face[0]]].forEach(([i, j]) => {
+      if (!points[i] || !points[j]) return;
+      const key = i < j ? `${i}|${j}` : `${j}|${i}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      byVertex[i].push(ends.length);
+      byVertex[j].push(ends.length);
+      ends.push([i, j]);
+    });
+  });
+
+  const used = new Uint8Array(ends.length);
+  const cursor = new Int32Array(points.length);
+  const nextEdge = (v) => {
+    const edges = byVertex[v];
+    while (cursor[v] < edges.length && used[edges[cursor[v]]]) cursor[v] += 1;
+    return cursor[v] < edges.length ? edges[cursor[v]] : -1;
+  };
+
+  // A walk from an odd-degree vertex ends at another one, so starting there
+  // first leaves closed loops (and fewer polylines) for the rest.
+  const starts = points.map((_, v) => v).filter((v) => byVertex[v].length % 2 === 1);
+  points.forEach((_, v) => {
+    if (byVertex[v].length % 2 === 0) starts.push(v);
+  });
+
+  const x = [];
+  const y = [];
+  let lines = 0;
+  starts.forEach((start) => {
+    while (nextEdge(start) !== -1) {
+      let v = start;
+      x.push(points[v].e);
+      y.push(points[v].n);
+      let edge;
+      while ((edge = nextEdge(v)) !== -1) {
+        used[edge] = 1;
+        const [a, b] = ends[edge];
+        v = a === v ? b : a;
+        x.push(points[v].e);
+        y.push(points[v].n);
+      }
+      x.push(null);
+      y.push(null);
+      lines += 1;
+    }
+  });
+  return { x, y, edges: ends.length, lines };
+}
 
 /**
  * The DTM's triangle edges as one line trace, each edge shared by two faces
- * drawn once, plus its vertices for the elevation readout until Compute deck
+ * drawn once (joined into polylines, see chainTinEdges), plus its vertices for the elevation readout until Compute deck
  * adds the deflected points. Empty without TIN faces.
  */
 function dtmTriangleTraces() {
@@ -1733,22 +1795,7 @@ function dtmTriangleTraces() {
   if (!surface?.faces.length) return [];
 
   if (dtmTriangleCache.surface !== surface) {
-    const x = [];
-    const y = [];
-    const seen = new Set();
-    surface.faces.forEach((face) => {
-      [[face[0], face[1]], [face[1], face[2]], [face[2], face[0]]].forEach(([i, j]) => {
-        const a = surface.points[i];
-        const b = surface.points[j];
-        if (!a || !b) return;
-        const key = i < j ? `${i}|${j}` : `${j}|${i}`;
-        if (seen.has(key)) return;
-        seen.add(key);
-        x.push(a.e, b.e, null);
-        y.push(a.n, b.n, null);
-      });
-    });
-    dtmTriangleCache = { surface, x, y, edges: seen.size };
+    dtmTriangleCache = { surface, ...chainTinEdges(surface.points, surface.faces) };
   }
 
   const traces = [
