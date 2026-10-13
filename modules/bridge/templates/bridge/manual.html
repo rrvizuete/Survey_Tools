@@ -140,9 +140,9 @@
             <tr><td>Girder width</td><td>ft</td><td>Top flange width; the L and R points sit half this width either side of the centerline.</td></tr>
             <tr><td>Girder height</td><td>ft</td><td>Added to seat, bearing, and plate to reach the top of girder.</td></tr>
             <tr><td>Camber at midspan</td><td>in</td><td>Reported in the export for reference; not added to the elevation.</td></tr>
-            <tr><td>Deflection at midspan</td><td>in</td><td>Dead-load deflection at mid-length. <span class="tag tag-required">Required</span></td></tr>
-            <tr><td>Deflection at quarter span</td><td>in</td><td>Refines the deflection curve fit. <span class="tag tag-optional">Optional</span></td></tr>
-            <tr><td>Deflection at third span</td><td>in</td><td>Refines the deflection curve fit. <span class="tag tag-optional">Optional</span></td></tr>
+            <tr><td>Deflection at midspan</td><td>in</td><td>Dead-load deflection at mid-length. The curve always passes through it; alone, it gives the uniform load curve (see <a href="#methods">Calculation methods</a>). <span class="tag tag-required">Required</span></td></tr>
+            <tr><td>Deflection at quarter span</td><td>in</td><td>Sets the shape of the deflection curve; applies at both quarter points. <span class="tag tag-optional">Optional</span></td></tr>
+            <tr><td>Deflection at third span</td><td>in</td><td>Sets the shape of the deflection curve; applies at both third points. <span class="tag tag-optional">Optional</span></td></tr>
             <tr><td>Support1 Northing / Easting</td><td>ft</td><td>Girder centerline at the start support.</td></tr>
             <tr><td>Support1 Seat Z</td><td>ft</td><td>Bearing seat elevation at the start support.</td></tr>
             <tr><td>Bearing / Plate height at Support1</td><td>in</td><td>Stacked on the seat.</td></tr>
@@ -563,15 +563,30 @@
 
       <h3>Deflection curve</h3>
       <p>
-        The deflection is zero at both supports, symmetric about midspan, and always passes through the midspan value.
-        With the midspan value alone it is the exact elastic curve of a simple span under uniform (dead) load:
+        The deflection is always this quartic in <em>t</em>, which is zero at both supports and symmetric about midspan,
+        so a 1/4 or 1/3 span value applies at both ends of the girder:
       </p>
-      <code class="formula">d(t) = a&#8321;&middot;u + a&#8322;&middot;u&sup2;,   u = t &middot; (1 &minus; t)
-Midspan only:  a&#8321; = a&#8322; = (16/5) &middot; d<sub>mid</sub>   &rArr;   d(t) = d<sub>mid</sub> &middot; (16/5) &middot; (t &minus; 2t&sup3; + t&#8308;)</code>
+      <code class="formula">d(t) = a&#8321; &middot; t(1 &minus; t) + a&#8322; &middot; t&sup2;(1 &minus; t)&sup2;
+     = a&#8322;&middot;t&#8308; &minus; 2a&#8322;&middot;t&sup3; + (a&#8322; &minus; a&#8321;)&middot;t&sup2; + a&#8321;&middot;t</code>
       <p>
-        When the 1/4 or 1/3 span values are given, they set the shape of the curve instead: it passes exactly through
-        one of them, or is fitted by least squares to both, while still passing through the midspan value. A parabola
-        (a&#8322; = 0) is one of the shapes it can take.
+        The curve always passes exactly through the midspan value, the engineer's design value. How a&#8321; and
+        a&#8322; are found depends on which values are given:
+      </p>
+      <table class="manual-table">
+        <thead><tr><th>Values given</th><th>How a&#8321;, a&#8322; are found</th><th>Curve passes</th></tr></thead>
+        <tbody>
+          <tr><td>Midspan only</td><td>No fitting: the shape is fixed to the exact elastic curve of a simple span under uniform (dead) load, a&#8321; = a&#8322; = (16/5) &middot; d<sub>mid</sub></td><td>Exactly through midspan</td></tr>
+          <tr><td>Midspan + 1/4 <em>or</em> 1/3 span</td><td>Two equations, two unknowns, solved directly</td><td>Exactly through both values</td></tr>
+          <tr><td>Midspan + 1/4 <em>and</em> 1/3 span</td><td>Midspan is a fixed condition; least squares on the 1/4 and 1/3 span values</td><td>Exactly through midspan, best fit to the other two</td></tr>
+        </tbody>
+      </table>
+      <p>For example, with midspan and quarter span values d<sub>mid</sub> and d<sub>q</sub>:</p>
+      <code class="formula">a&#8321; = (64/3) &middot; d<sub>q</sub> &minus; 12 &middot; d<sub>mid</sub>
+a&#8322; = 64 &middot; d<sub>mid</sub> &minus; (256/3) &middot; d<sub>q</sub></code>
+      <p>
+        If d<sub>q</sub> = 0.7125 &middot; d<sub>mid</sub>, this gives the uniform load curve again. If d<sub>q</sub> =
+        0.75 &middot; d<sub>mid</sub>, then a&#8322; = 0 and the curve is a parabola. Any other value gives a quartic
+        that still passes through both values.
       </p>
 
       <h3>Top of girder</h3>
