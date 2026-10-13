@@ -562,10 +562,17 @@
       </p>
 
       <h3>Deflection curve</h3>
-      <p>The deflection is a parabola that is zero at both supports, fitted by least squares to the values given:</p>
-      <code class="formula">d(t) = A &middot; (t&sup2; &minus; t)
-A = &Sigma; v&#7522;&middot;b&#7522; / &Sigma; b&#7522;&sup2;,   b&#7522; = t&#7522;&sup2; &minus; t&#7522;
-t = 1/2 (midspan, required), 1/4 and 1/3 (optional)</code>
+      <p>
+        The deflection is zero at both supports, symmetric about midspan, and always passes through the midspan value.
+        With the midspan value alone it is the exact elastic curve of a simple span under uniform (dead) load:
+      </p>
+      <code class="formula">d(t) = a&#8321;&middot;u + a&#8322;&middot;u&sup2;,   u = t &middot; (1 &minus; t)
+Midspan only:  a&#8321; = a&#8322; = (16/5) &middot; d<sub>mid</sub>   &rArr;   d(t) = d<sub>mid</sub> &middot; (16/5) &middot; (t &minus; 2t&sup3; + t&#8308;)</code>
+      <p>
+        When the 1/4 or 1/3 span values are given, they set the shape of the curve instead: it passes exactly through
+        one of them, or is fitted by least squares to both, while still passing through the midspan value. A parabola
+        (a&#8322; = 0) is one of the shapes it can take.
+      </p>
 
       <h3>Top of girder</h3>
       <code class="formula">Elevation = Seat Z + Bearing + Plate + Girder height + d(t)</code>
