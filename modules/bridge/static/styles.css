@@ -412,6 +412,32 @@
   gap: 0.4rem;
 }
 
+/* ---------- Intervals: one box per span, and per girder under it ---------- */
+
+.girder-interval-list:not(:empty) {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  max-height: 22rem;
+  overflow-y: auto;
+}
+
+.girder-interval-span .span-thickness-row {
+  font-weight: 600;
+}
+
+.girder-interval-girders {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+  gap: 0.25rem 0.5rem;
+  margin-top: 0.25rem;
+  padding-left: 0.75rem;
+}
+
+.girder-interval-girders .span-thickness-row {
+  grid-template-columns: auto 1fr;
+}
+
 /* ---------- Girder report ---------- */
 
 .report-girder + .report-girder {

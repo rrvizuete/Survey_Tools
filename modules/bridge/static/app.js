@@ -223,6 +223,10 @@ const state = {
   // Deck slab thickness (in): one value for every span, and per-span values
   // that replace it. null means not set.
   deckThickness: { all: null, bySpan: {} },
+  // Intervals per girder: one count for every girder, per-span counts that
+  // replace it, and per-girder counts ("span||girder") that replace those.
+  // null means not set.
+  intervals: { all: 10, bySpan: {}, byGirder: {} },
 };
 
 const ui = {
@@ -243,6 +247,9 @@ const ui = {
   uploadStatus: document.getElementById("uploadStatus"),
   dtmUploadStatus: document.getElementById("dtmUploadStatus"),
   intervalsInput: document.getElementById("intervalsInput"),
+  girderIntervalList: document.getElementById("girderIntervalList"),
+  intervalsStatus: document.getElementById("intervalsStatus"),
+  intervalsHint: document.getElementById("intervalsHint"),
   progressBar: document.getElementById("progressBar"),
   progressText: document.getElementById("progressText"),
   logOutput: document.getElementById("logOutput"),
@@ -664,6 +671,8 @@ function renderSourceGrid() {
       input.addEventListener("input", (event) => {
         state.sourceRows[rowIndex][colIndex] = event.target.value;
       });
+      // Renaming a span or girder changes the interval boxes.
+      if (colIndex < 2) input.addEventListener("change", renderGirderIntervalList);
       td.appendChild(input);
       tr.appendChild(td);
     });
@@ -677,6 +686,7 @@ async function loadSourceRows() {
     state.sourceRows = [];
     ui.uploadStatus.textContent = "";
     renderSourceGrid();
+    renderGirderIntervalList();
     return;
   }
 
@@ -687,6 +697,157 @@ async function loadSourceRows() {
   state.sourceRows = rows.slice(1).map(normalizeRow);
   ui.uploadStatus.textContent = "Spreadsheet uploaded correctly. You can edit values in the grid before calculation.";
   renderSourceGrid();
+  renderGirderIntervalList();
+}
+
+/** Girders in the sheet, by span, in label order. Rows without a span or girder are left out. */
+function sourceGirders() {
+  const bySpan = new Map();
+  state.sourceRows.forEach((row) => {
+    const span = String(row[0] ?? "").trim();
+    const girder = String(row[1] ?? "").trim();
+    if (!span || !girder) return;
+    if (!bySpan.has(span)) bySpan.set(span, new Set());
+    bySpan.get(span).add(girder);
+  });
+  const byLabel = (a, b) => a.localeCompare(b, undefined, { numeric: true });
+  return Array.from(bySpan.keys())
+    .sort(byLabel)
+    .map((span) => ({ span, girders: Array.from(bySpan.get(span)).sort(byLabel) }));
+}
+
+/** An interval box's value: null when blank, NaN when not a whole number from 1 to 250. */
+function parseIntervals(raw) {
+  const text = String(raw ?? "").trim();
+  if (!text) return null;
+  const value = Number(text);
+  return Number.isInteger(value) && value >= 1 && value <= 250 ? value : Number.NaN;
+}
+
+/**
+ * Intervals for a girder and where they came from: the girder's own count,
+ * else its span's, else the all-girders count, else null.
+ */
+function intervalsFor(span, girder) {
+  const own = state.intervals.byGirder[`${span}||${girder}`];
+  if (own !== null && own !== undefined) return { count: own, source: "girder" };
+  const spanCount = state.intervals.bySpan[span];
+  if (spanCount !== null && spanCount !== undefined) return { count: spanCount, source: "span" };
+  if (state.intervals.all !== null) return { count: state.intervals.all, source: "all" };
+  return null;
+}
+
+function intervalInput(id, value, title) {
+  const input = document.createElement("input");
+  input.className = "form-control form-control-sm";
+  input.id = id;
+  input.type = "number";
+  input.min = "1";
+  input.max = "250";
+  input.step = "1";
+  input.value = value ?? "";
+  input.title = title;
+  return input;
+}
+
+function labelledRow(id, text, input) {
+  const row = document.createElement("div");
+  row.className = "span-thickness-row";
+  const label = document.createElement("label");
+  label.className = "form-label mb-0";
+  label.htmlFor = id;
+  label.textContent = text;
+  row.append(label, input);
+  return row;
+}
+
+/**
+ * One interval box per span, with one per girder under it, built from the
+ * sheet as soon as it is read. Blank boxes use the value above them.
+ */
+function renderGirderIntervalList() {
+  if (!ui.girderIntervalList) return;
+  const spans = sourceGirders();
+  // Keep the values of spans and girders that are still in the sheet.
+  const keptSpans = {};
+  const keptGirders = {};
+  spans.forEach(({ span, girders }) => {
+    if (span in state.intervals.bySpan) keptSpans[span] = state.intervals.bySpan[span];
+    girders.forEach((girder) => {
+      const key = `${span}||${girder}`;
+      if (key in state.intervals.byGirder) keptGirders[key] = state.intervals.byGirder[key];
+    });
+  });
+  state.intervals.bySpan = keptSpans;
+  state.intervals.byGirder = keptGirders;
+
+  const safe = (text) => text.replace(/[^A-Za-z0-9_-]/g, "_");
+  ui.girderIntervalList.innerHTML = "";
+  spans.forEach(({ span, girders }) => {
+    const group = document.createElement("div");
+    group.className = "girder-interval-span";
+
+    const spanId = `spanIntervals-${safe(span)}`;
+    const spanInput = intervalInput(
+      spanId,
+      keptSpans[span],
+      `Intervals for every girder in span ${span} (1-250). Blank uses the value above.`,
+    );
+    spanInput.dataset.span = span;
+    group.appendChild(labelledRow(spanId, `Span ${span}`, spanInput));
+
+    const list = document.createElement("div");
+    list.className = "girder-interval-girders";
+    girders.forEach((girder) => {
+      const id = `girderIntervals-${safe(span)}-${safe(girder)}`;
+      const input = intervalInput(
+        id,
+        keptGirders[`${span}||${girder}`],
+        `Intervals for span ${span}, girder ${girder} (1-250). Blank uses the span's value.`,
+      );
+      input.dataset.span = span;
+      input.dataset.girder = girder;
+      list.appendChild(labelledRow(id, `G${girder}`, input));
+    });
+    group.appendChild(list);
+    ui.girderIntervalList.appendChild(group);
+  });
+  ui.intervalsHint?.classList.toggle("d-none", !spans.length);
+  updateIntervalPlaceholders();
+}
+
+/** Blank boxes show the count they fall back to. */
+function updateIntervalPlaceholders() {
+  ui.girderIntervalList?.querySelectorAll("input").forEach((input) => {
+    const { span, girder } = input.dataset;
+    const fallback =
+      girder === undefined
+        ? state.intervals.all
+        : (state.intervals.bySpan[span] ?? state.intervals.all);
+    input.placeholder = fallback === null || fallback === undefined ? "Not set" : String(fallback);
+  });
+}
+
+/** Reads an interval box into state; an invalid value is flagged and treated as blank. */
+function onIntervalsChange(event) {
+  const input = event.target;
+  if (input !== ui.intervalsInput && !input.dataset.span) return;
+  const value = parseIntervals(input.value);
+  const valid = !Number.isNaN(value);
+  input.classList.toggle("is-invalid", !valid);
+  const stored = valid ? value : null;
+  if (input === ui.intervalsInput) state.intervals.all = stored;
+  else if (input.dataset.girder === undefined) state.intervals.bySpan[input.dataset.span] = stored;
+  else state.intervals.byGirder[`${input.dataset.span}||${input.dataset.girder}`] = stored;
+
+  ui.intervalsStatus.textContent = invalidIntervalInputs().length
+    ? "Intervals must be a whole number from 1 to 250 (or blank)."
+    : "";
+  updateIntervalPlaceholders();
+}
+
+function invalidIntervalInputs() {
+  return Array.from(document.querySelectorAll("#intervalsInput.is-invalid, #girderIntervalList input.is-invalid"));
 }
 
 function buildGirderPoints(row, intervals) {
@@ -3177,9 +3338,15 @@ function runCalculation() {
     return;
   }
 
-  const intervals = parseNumber(ui.intervalsInput.value, Number.NaN);
-  if (!Number.isInteger(intervals) || intervals < 1 || intervals > 250) {
-    window.alert("Intervals must be an integer between 1 and 250.");
+  if (invalidIntervalInputs().length) {
+    window.alert("Intervals must be a whole number from 1 to 250. Fix the boxes marked in red.");
+    return;
+  }
+  const unset = sourceGirders().flatMap(({ span, girders }) =>
+    girders.filter((girder) => !intervalsFor(span, girder)).map((girder) => `span ${span} girder ${girder}`),
+  );
+  if (unset.length) {
+    window.alert(`Set the intervals for ${unset.join(", ")} (or the Intervals box above them).`);
     return;
   }
 
@@ -3205,6 +3372,8 @@ function runCalculation() {
     state.sourceRows[rowIndex] = row;
 
     try {
+      // Rows without a span or girder have no intervals; buildGirderPoints rejects them first.
+      const intervals = intervalsFor(String(row[0] ?? "").trim(), String(row[1] ?? "").trim())?.count ?? 1;
       const result = buildGirderPoints(row, intervals);
       output.push(...result.rows);
       const owner = { row: rowIndex + 2, span: result.spanDisplay, girder: result.girderDisplay };
@@ -3237,7 +3406,7 @@ function runCalculation() {
       state.spanToGirders[result.spanDisplay].add(result.girderDisplay);
 
       state.logs.push(
-        `Row ${rowIndex + 2}: Span ${result.spanDisplay}, Girder ${result.girderDisplay}. A_def=${result.aDefIn.toFixed(3)} in, A_camber=${result.aCamberIn.toFixed(3)} in, centerline radius=${result.centerlineRadius.toFixed(3)} ft.`,
+        `Row ${rowIndex + 2}: Span ${result.spanDisplay}, Girder ${result.girderDisplay}, ${intervals} intervals. A_def=${result.aDefIn.toFixed(3)} in, A_camber=${result.aCamberIn.toFixed(3)} in, centerline radius=${result.centerlineRadius.toFixed(3)} ft.`,
       );
     } catch (error) {
       state.logs.push(`Row ${rowIndex + 2}: ERROR - ${error.message}`);
@@ -3742,6 +3911,10 @@ document.getElementById("downloadLogBtn").addEventListener("click", downloadLog)
 document.getElementById("exportReportBtn").addEventListener("click", exportGirderReport);
 document.getElementById("printReportBtn").addEventListener("click", printGirderReport);
 
+// Interval boxes: the all-girders value and the per-span/per-girder list (built when the sheet is read).
+ui.intervalsInput.addEventListener("change", onIntervalsChange);
+ui.girderIntervalList.addEventListener("change", onIntervalsChange);
+
 // Thickness boxes: the all-spans value and the per-span list (built after Calculate).
 ui.deckThicknessInput.addEventListener("change", onThicknessChange);
 ui.spanThicknessList.addEventListener("change", onThicknessChange);
@@ -3758,6 +3931,7 @@ ui.fileInput.addEventListener("change", async () => {
   } catch (error) {
     state.sourceRows = [];
     renderSourceGrid();
+    renderGirderIntervalList();
     ui.uploadStatus.textContent = `Error loading spreadsheet: ${error.message}`;
     window.alert(`Error loading spreadsheet: ${error.message}`);
   }
