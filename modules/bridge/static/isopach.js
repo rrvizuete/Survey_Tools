@@ -67,7 +67,35 @@
         n: point.n,
         value: girder.values[index],
       })),
+      flanges: flangeRows(girder, perpE, perpN),
     }));
+  }
+
+  /**
+   * The girder's two flange edges, in transverse order, each carrying the
+   * girder's own deflection. A girder section deflects as a whole, so both
+   * edges at an interval get the same value and the deck only varies between
+   * the flanges of neighbouring girders. Null without a usable flange width.
+   */
+  function flangeRows(girder, perpE, perpN) {
+    const count = girder.centerline.length;
+    if (girder.left?.length !== count || girder.right?.length !== count) return null;
+
+    const middle = Math.floor(count / 2);
+    const left = girder.left[middle];
+    const right = girder.right[middle];
+    if (Math.hypot(left.e - right.e, left.n - right.n) < 1e-6) return null;
+
+    const toRow = (edge) => edge.map((point, index) => ({ e: point.e, n: point.n, value: girder.values[index] }));
+    const leftFirst = left.e * perpE + left.n * perpN < right.e * perpE + right.n * perpN;
+    return leftFirst ? [toRow(girder.left), toRow(girder.right)] : [toRow(girder.right), toRow(girder.left)];
+  }
+
+  /** Swap each girder's centerline row for its two flange rows, where it has them. */
+  function expandFlanges(rows) {
+    return rows.flatMap((row) =>
+      row.flanges ? row.flanges.map((points) => ({ girder: row.girder, virtual: false, points })) : [row],
+    );
   }
 
   /**
@@ -365,9 +393,12 @@
         if (!geometry?.planCenterline?.length || !profile?.length) return;
 
         const count = Math.min(geometry.planCenterline.length, profile.length);
+        const edges = geometry.planEdges ?? [];
         girders.push({
           label: girderLabel,
           centerline: geometry.planCenterline.slice(0, count),
+          left: edges.filter((point) => point.side === "L").slice(0, count),
+          right: edges.filter((point) => point.side === "R").slice(0, count),
           values: profile.slice(0, count).map((point) => point.deflectionIn / 12),
         });
       });
@@ -396,7 +427,9 @@
         });
       });
       const before = triangles.length;
-      buildCells(rows, spanLabel, triangles);
+      // The overhang rows are placed from the girder centerlines (above); the
+      // surface itself runs between the flange edges.
+      buildCells(expandFlanges(rows), spanLabel, triangles);
       spans.push({ span: spanLabel, girders: girders.length, triangles: triangles.length - before });
     });
 
