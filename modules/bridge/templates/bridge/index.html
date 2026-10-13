@@ -85,10 +85,23 @@
               <div class="sidebar-row">
                 <div class="sidebar-field-narrow">
                   <label for="intervalsInput" class="form-label">Intervals</label>
-                  <input class="form-control form-control-sm" id="intervalsInput" type="number" value="10" min="1" max="250" />
+                  <input
+                    class="form-control form-control-sm"
+                    id="intervalsInput"
+                    type="number"
+                    value="10"
+                    min="1"
+                    max="250"
+                    step="1"
+                    placeholder="Not set"
+                    title="Number of equal divisions along every girder that has no value of its own (1-250)."
+                  />
                 </div>
                 <button id="calculateBtn" class="btn btn-primary btn-sm sidebar-row-action" type="button">Calculate</button>
               </div>
+              <div id="girderIntervalList" class="girder-interval-list"></div>
+              <p id="intervalsStatus" class="status-message"></p>
+              <p id="intervalsHint" class="sidebar-hint mt-1 mb-2 d-none">A blank girder uses its span's value; a blank span uses the value above.</p>
               <div class="progress mt-2" role="progressbar" aria-label="Calculation progress" aria-valuemin="0" aria-valuemax="100">
                 <div id="progressBar" class="progress-bar" style="width: 0%">0%</div>
               </div>

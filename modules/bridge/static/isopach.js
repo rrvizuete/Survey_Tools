@@ -7,6 +7,28 @@
     return labels.slice().sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
   }
 
+  /**
+   * The point at a fraction (0-1) of the way along a row, interpolated between
+   * its intervals. Every girder's intervals are equal divisions of its length,
+   * so this pairs points of girders that use different interval counts.
+   */
+  function pointAtFraction(points, fraction) {
+    const last = points.length - 1;
+    if (last <= 0) return points[0];
+    const position = Math.max(0, Math.min(last, fraction * last));
+    const index = Math.min(last - 1, Math.floor(position));
+    const w = position - index;
+    const a = points[index];
+    const b = points[index + 1];
+    return { e: a.e + (b.e - a.e) * w, n: a.n + (b.n - a.n) * w };
+  }
+
+  /** The neighbour row's point level with point `index` of a row of `count` points. */
+  function matchingPoint(neighbor, index, count) {
+    if (neighbor.points.length === count) return neighbor.points[index];
+    return pointAtFraction(neighbor.points, count > 1 ? index / (count - 1) : 0);
+  }
+
   function spanDirection(girders) {
     // Average chord direction across the span's girders, in (e, n).
     let sumE = 0;
@@ -121,7 +143,7 @@
     /** Unit normal to the girder at each point, pointing away from the neighbour. */
     const outwardNormals = (inner, neighbor) =>
       inner.points.map((point, index) => {
-        const other = neighbor.points[index] ?? neighbor.points[neighbor.points.length - 1];
+        const other = matchingPoint(neighbor, index, inner.points.length);
         const awayE = point.e - other.e;
         const awayN = point.n - other.n;
 
@@ -152,7 +174,7 @@
           fascia,
           outward: normals,
           points: inner.points.map((point, index) => {
-            const other = neighbor.points[index];
+            const other = matchingPoint(neighbor, index, inner.points.length);
             if (!other) return { e: point.e, n: point.n, value: point.value };
             return { e: 2 * point.e - other.e, n: 2 * point.n - other.n, value: point.value };
           }),
@@ -200,10 +222,52 @@
     });
   }
 
+  /**
+   * Triangulates the strip between two rows with different interval counts.
+   * Walks both rows from Support1 to Support2 by fraction of length, each
+   * triangle moving one row on by one interval, so every girder point stays a
+   * vertex of the surface.
+   */
+  function stitchRows(rowA, rowB, span, triangles) {
+    const a = rowA.points;
+    const b = rowB.points;
+    const lastA = a.length - 1;
+    const lastB = b.length - 1;
+    if (lastA < 1 || lastB < 1) return;
+    const distance = (p, q) => Math.hypot(p.e - q.e, p.n - q.n);
+
+    let i = 0;
+    let j = 0;
+    while (i < lastA || j < lastB) {
+      let advanceA;
+      if (i === lastA) advanceA = false;
+      else if (j === lastB) advanceA = true;
+      else {
+        const nextA = (i + 1) / lastA;
+        const nextB = (j + 1) / lastB;
+        // Level points on both rows: take the shorter diagonal, as for a quad.
+        advanceA =
+          Math.abs(nextA - nextB) > 1e-9 ? nextA < nextB : distance(a[i + 1], b[j]) <= distance(a[i], b[j + 1]);
+      }
+
+      if (advanceA) {
+        pushTriangle(triangles, span, a[i], a[i + 1], b[j], rowA.girder, rowA.girder, rowB.girder);
+        i += 1;
+      } else {
+        pushTriangle(triangles, span, a[i], b[j + 1], b[j], rowA.girder, rowB.girder, rowB.girder);
+        j += 1;
+      }
+    }
+  }
+
   function buildCells(rows, span, triangles) {
     for (let r = 0; r < rows.length - 1; r += 1) {
       const rowA = rows[r];
       const rowB = rows[r + 1];
+      if (rowA.points.length !== rowB.points.length) {
+        stitchRows(rowA, rowB, span, triangles);
+        continue;
+      }
       const count = Math.min(rowA.points.length, rowB.points.length);
 
       for (let i = 0; i < count - 1; i += 1) {
