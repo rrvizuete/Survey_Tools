@@ -384,23 +384,43 @@ function buildCenterlineGeometry(support1E, support1N, support2E, support2N, rad
   };
 }
 
-function computeParabolaA(observations) {
-  if (!observations.length) return 0;
-  const basis = (t) => t * t - t;
-  if (observations.length === 1) {
-    const b = basis(observations[0].t);
-    return Math.abs(b) < 1e-12 ? 0 : observations[0].value / b;
-  }
+/**
+ * Dead load deflection curve d(t) = a1·u + a2·u², with u = t(1 − t).
+ *
+ * Every curve of this form is zero at both supports and symmetric about
+ * midspan. It holds both the parabola (a2 = 0) and the exact elastic curve of
+ * a prismatic simple span under uniform load, d = Δmid·(16/5)·(u + u²).
+ *
+ * The curve always passes through the midspan value. With midspan alone it is
+ * the exact uniform load curve; the optional quarter and third span values
+ * then set its shape (exactly through one, least squares through both).
+ */
+function computeDeflectionCurve(midValue, extraObservations = []) {
+  const uniform = 16 / 5;
+  // Unit-midspan basis curves: q is the uniform load curve, p the parabola.
+  const q = (u) => uniform * (u + u * u);
+  const p = (u) => 4 * u;
 
   let numerator = 0;
   let denominator = 0;
-  observations.forEach((obs) => {
-    const b = basis(obs.t);
-    numerator += obs.value * b;
-    denominator += b * b;
+  extraObservations.forEach((obs) => {
+    const u = obs.t * (1 - obs.t);
+    const diff = midValue * (p(u) - q(u));
+    numerator += (obs.value - midValue * q(u)) * diff;
+    denominator += diff * diff;
   });
 
-  return Math.abs(denominator) < 1e-12 ? 0 : numerator / denominator;
+  // Blend between the two basis curves: 0 is the uniform load curve, 1 the parabola.
+  const blend = denominator < 1e-12 ? 0 : numerator / denominator;
+  return {
+    a1: midValue * ((1 - blend) * uniform + blend * 4),
+    a2: midValue * (1 - blend) * uniform,
+  };
+}
+
+function evaluateDeflectionCurve(curve, t) {
+  const u = t * (1 - t);
+  return curve.a1 * u + curve.a2 * u * u;
 }
 
 function activateTab(tab) {
@@ -892,12 +912,11 @@ function buildGirderPoints(row, intervals) {
     throw new Error("Span, Girder, and Deflection at midspan are required in each row.");
   }
 
-  const observations = [];
-  if (Number.isFinite(defQuarter)) observations.push({ t: 0.25, value: defQuarter });
-  if (Number.isFinite(defThird)) observations.push({ t: 1 / 3, value: defThird });
-  observations.push({ t: 0.5, value: defMid });
+  const extraObservations = [];
+  if (Number.isFinite(defQuarter)) extraObservations.push({ t: 0.25, value: defQuarter });
+  if (Number.isFinite(defThird)) extraObservations.push({ t: 1 / 3, value: defThird });
 
-  const aDefIn = computeParabolaA(observations);
+  const deflectionCurve = computeDeflectionCurve(defMid, extraObservations);
   const aCamberIn = -4 * camberMid;
 
   const bearingFeet1 = support1Bearing / 12;
@@ -922,7 +941,7 @@ function buildGirderPoints(row, intervals) {
     const bearing = bearingFeet1 + t * (bearingFeet2 - bearingFeet1);
     const plate = plateFeet1 + t * (plateFeet2 - plateFeet1);
 
-    const deflectionIn = aDefIn * (t * t - t);
+    const deflectionIn = evaluateDeflectionCurve(deflectionCurve, t);
     const camberIn = aCamberIn * (t * t - t);
     const deflectionFt = deflectionIn / 12;
     const camberFt = camberIn / 12;
@@ -957,7 +976,7 @@ function buildGirderPoints(row, intervals) {
   return {
     spanDisplay,
     girderDisplay,
-    aDefIn,
+    deflectionCurve,
     aCamberIn,
     support1N,
     support1E,
@@ -2018,7 +2037,7 @@ function colorscaleRgb(colorscale, t) {
 /**
  * Plan value function and domain for a surface mode, or null when that
  * surface is not available yet. Areas past the span ends read 0 deflection,
- * which is physically correct -- the deflection parabola is zero at every
+ * which is physically correct -- the deflection curve is zero at every
  * support.
  */
 function planSurfaceSampler(mode, rings) {
@@ -3535,7 +3554,7 @@ function runCalculation() {
       state.spanToGirders[result.spanDisplay].add(result.girderDisplay);
 
       state.logs.push(
-        `Row ${rowIndex + 2}: Span ${result.spanDisplay}, Girder ${result.girderDisplay}, ${intervals} intervals. A_def=${result.aDefIn.toFixed(3)} in, A_camber=${result.aCamberIn.toFixed(3)} in, centerline radius=${result.centerlineRadius.toFixed(3)} ft.`,
+        `Row ${rowIndex + 2}: Span ${result.spanDisplay}, Girder ${result.girderDisplay}, ${intervals} intervals. deflection a1=${result.deflectionCurve.a1.toFixed(3)} in, a2=${result.deflectionCurve.a2.toFixed(3)} in, A_camber=${result.aCamberIn.toFixed(3)} in, centerline radius=${result.centerlineRadius.toFixed(3)} ft.`,
       );
     } catch (error) {
       state.logs.push(`Row ${rowIndex + 2}: ERROR - ${error.message}`);
