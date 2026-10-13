@@ -724,17 +724,34 @@ function parseIntervals(raw) {
   return Number.isInteger(value) && value >= 1 && value <= 250 ? value : Number.NaN;
 }
 
+// A stored interval value is a count, null (blank), or the box's raw text
+// when it is invalid -- kept so a rebuilt box still shows it and Calculate
+// still refuses it.
+const isIntervalCount = (value) => typeof value === "number";
+const isInvalidInterval = (value) => typeof value === "string";
+
 /**
  * Intervals for a girder and where they came from: the girder's own count,
  * else its span's, else the all-girders count, else null.
  */
 function intervalsFor(span, girder) {
   const own = state.intervals.byGirder[`${span}||${girder}`];
-  if (own !== null && own !== undefined) return { count: own, source: "girder" };
+  if (isIntervalCount(own)) return { count: own, source: "girder" };
   const spanCount = state.intervals.bySpan[span];
-  if (spanCount !== null && spanCount !== undefined) return { count: spanCount, source: "span" };
-  if (state.intervals.all !== null) return { count: state.intervals.all, source: "all" };
+  if (isIntervalCount(spanCount)) return { count: spanCount, source: "span" };
+  if (isIntervalCount(state.intervals.all)) return { count: state.intervals.all, source: "all" };
   return null;
+}
+
+function hasInvalidIntervals() {
+  const { all, bySpan, byGirder } = state.intervals;
+  return [all, ...Object.values(bySpan), ...Object.values(byGirder)].some(isInvalidInterval);
+}
+
+function updateIntervalsStatus() {
+  ui.intervalsStatus.textContent = hasInvalidIntervals()
+    ? "Intervals must be a whole number from 1 to 250 (or blank)."
+    : "";
 }
 
 function intervalInput(id, value, title) {
@@ -746,6 +763,7 @@ function intervalInput(id, value, title) {
   input.max = "250";
   input.step = "1";
   input.value = value ?? "";
+  input.classList.toggle("is-invalid", isInvalidInterval(value));
   input.title = title;
   return input;
 }
@@ -814,40 +832,35 @@ function renderGirderIntervalList() {
   });
   ui.intervalsHint?.classList.toggle("d-none", !spans.length);
   updateIntervalPlaceholders();
+  // Dropping a renamed span or girder may also drop its invalid value.
+  updateIntervalsStatus();
 }
 
 /** Blank boxes show the count they fall back to. */
 function updateIntervalPlaceholders() {
   ui.girderIntervalList?.querySelectorAll("input").forEach((input) => {
     const { span, girder } = input.dataset;
+    const spanCount = state.intervals.bySpan[span];
     const fallback =
-      girder === undefined
-        ? state.intervals.all
-        : (state.intervals.bySpan[span] ?? state.intervals.all);
-    input.placeholder = fallback === null || fallback === undefined ? "Not set" : String(fallback);
+      girder !== undefined && isIntervalCount(spanCount) ? spanCount : state.intervals.all;
+    input.placeholder = isIntervalCount(fallback) ? String(fallback) : "Not set";
   });
 }
 
-/** Reads an interval box into state; an invalid value is flagged and treated as blank. */
+/** Reads an interval box into state; an invalid value is flagged and kept as its text. */
 function onIntervalsChange(event) {
   const input = event.target;
   if (input !== ui.intervalsInput && !input.dataset.span) return;
   const value = parseIntervals(input.value);
   const valid = !Number.isNaN(value);
   input.classList.toggle("is-invalid", !valid);
-  const stored = valid ? value : null;
+  const stored = valid ? value : String(input.value).trim();
   if (input === ui.intervalsInput) state.intervals.all = stored;
   else if (input.dataset.girder === undefined) state.intervals.bySpan[input.dataset.span] = stored;
   else state.intervals.byGirder[`${input.dataset.span}||${input.dataset.girder}`] = stored;
 
-  ui.intervalsStatus.textContent = invalidIntervalInputs().length
-    ? "Intervals must be a whole number from 1 to 250 (or blank)."
-    : "";
+  updateIntervalsStatus();
   updateIntervalPlaceholders();
-}
-
-function invalidIntervalInputs() {
-  return Array.from(document.querySelectorAll("#intervalsInput.is-invalid, #girderIntervalList input.is-invalid"));
 }
 
 function buildGirderPoints(row, intervals) {
@@ -3338,7 +3351,7 @@ function runCalculation() {
     return;
   }
 
-  if (invalidIntervalInputs().length) {
+  if (hasInvalidIntervals()) {
     window.alert("Intervals must be a whole number from 1 to 250. Fix the boxes marked in red.");
     return;
   }
